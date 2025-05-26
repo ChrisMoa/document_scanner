@@ -13,7 +13,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>flutter_base</string>
+	<string>document_scanner</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -45,5 +45,11 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>This app needs camera access to scan documents</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>This app needs photo library access to save scanned documents</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>This app needs photo library access to save scanned documents</string>
 </dict>
 </plist>

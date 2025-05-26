@@ -1,6 +1,6 @@
 {
-    "name": "flutter_base",
-    "short_name": "flutter_base",
+    "name": "document_scanner",
+    "short_name": "document_scanner",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
