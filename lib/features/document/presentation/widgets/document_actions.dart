@@ -6,8 +6,10 @@ class DocumentActions extends StatelessWidget {
   final VoidCallback onGeneratePdf;
   final VoidCallback onUploadToCloud;
   final VoidCallback onPreviewPdf;
+  final VoidCallback? onAddPages;
   final bool isGeneratingPdf;
   final bool isUploading;
+  final bool isAddingPages;
 
   const DocumentActions({
     super.key,
@@ -15,8 +17,10 @@ class DocumentActions extends StatelessWidget {
     required this.onGeneratePdf,
     required this.onUploadToCloud,
     required this.onPreviewPdf,
+    this.onAddPages,
     required this.isGeneratingPdf,
     required this.isUploading,
+    this.isAddingPages = false,
   });
 
   @override
@@ -61,6 +65,21 @@ class DocumentActions extends StatelessWidget {
             ),
             const SizedBox(width: 12),
             Expanded(child: _ActionButton(icon: Icons.share, label: 'Share', onPressed: () => _showShareOptions(context, theme), color: Colors.purple, theme: theme)),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _ActionButton(
+                icon: Icons.add_photo_alternate,
+                label: isAddingPages ? 'Adding Pages...' : 'Add Pages',
+                onPressed: isAddingPages ? null : onAddPages,
+                isLoading: isAddingPages,
+                color: Colors.indigo,
+                theme: theme,
+              ),
+            ),
           ],
         ),
         if (document.isEncrypted || document.isUploaded) ...[const SizedBox(height: 12), _buildStatusRow(theme)],
