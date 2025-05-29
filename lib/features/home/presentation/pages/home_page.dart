@@ -66,7 +66,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                 ),
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.push('/camera'),
+        onPressed: () => context.push('/enhanced-camera'),
         backgroundColor: theme.colorScheme.primary,
         foregroundColor: Colors.white,
         icon: const Icon(Icons.camera_alt),
