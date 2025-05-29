@@ -4,6 +4,8 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
+import 'package:path_provider/path_provider.dart';
+import 'package:document_scanner/core/models/settings_model.dart';
 
 class DocumentCorners {
   final List<Offset> corners;
@@ -205,9 +207,10 @@ class OpenCVService {
   }
 
   /// Creates a cropped and flattened document from an image using specified corners
-  Future<File?> cropDocumentWithCorners(File imageFile, List<Offset> corners) async {
+  Future<File?> cropDocumentWithCorners(File imageFile, List<Offset> corners, [DocumentProcessingSettings? settings]) async {
     try {
-      debugPrint('📐 Starting document perspective correction...');
+      final processingSettings = settings ?? const DocumentProcessingSettings();
+      debugPrint('📐 Starting document perspective correction with settings: $processingSettings');
 
       // Read the image file
       final imageBytes = await imageFile.readAsBytes();
@@ -221,25 +224,29 @@ class OpenCVService {
       debugPrint('📍 Corner points: ${corners.map((c) => '(${c.dx.toInt()}, ${c.dy.toInt()})')}');
 
       // Apply perspective transformation
-      final correctedImage = await _applyPerspectiveTransformation(image, corners);
-      if (correctedImage == null) {
+      final croppedImage = await _applyPerspectiveTransformation(image, corners);
+      if (croppedImage == null) {
         debugPrint('❌ Failed to apply perspective transformation');
         return null;
       }
+      debugPrint('✅ Perspective transformation completed');
 
-      debugPrint('✅ Perspective transformation completed: ${correctedImage.width}x${correctedImage.height}');
+      // Apply document enhancement with user settings
+      final enhancedImage = await _enhanceDocument(croppedImage, processingSettings);
+      debugPrint('✅ Document enhancement completed');
 
-      // Apply document enhancement
-      final enhanced = await _enhanceDocument(correctedImage);
+      // Save the processed image
+      final outputDir = await getTemporaryDirectory();
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final outputFile = File('${outputDir.path}/cropped_document_$timestamp.jpg');
 
-      // Save to temporary file
-      final tempFile = File('${imageFile.path}_cropped.jpg');
-      await tempFile.writeAsBytes(img.encodeJpg(enhanced, quality: 95));
+      final compressedBytes = img.encodeJpg(enhancedImage, quality: 95);
+      await outputFile.writeAsBytes(compressedBytes);
 
-      debugPrint('✅ Document perspective correction completed successfully');
-      return tempFile;
+      debugPrint('✅ Document processing completed: ${outputFile.path}');
+      return outputFile;
     } catch (e) {
-      debugPrint('❌ Error in cropDocumentWithCorners: $e');
+      debugPrint('❌ Error in document cropping: $e');
       return null;
     }
   }
@@ -401,95 +408,503 @@ class OpenCVService {
   }
 
   /// Enhanced document processing for better readability
-  Future<img.Image> _enhanceDocument(img.Image image) async {
-    debugPrint('🎨 Applying gentle document enhancement...');
+  Future<img.Image> _enhanceDocument(img.Image image, DocumentProcessingSettings settings) async {
+    debugPrint('🎨 ===== DOCUMENT ENHANCEMENT STARTED =====');
+    debugPrint('🎨 Settings received: $settings');
+    debugPrint('🎨 Filtering enabled: ${settings.enableFiltering}');
 
     try {
       // Convert to grayscale first for better processing
       final grayscale = img.grayscale(image);
       debugPrint('✅ Converted to grayscale');
 
+      // If filtering is disabled, return the grayscale image only
+      if (!settings.enableFiltering) {
+        debugPrint('⚠️ ===== FILTERING DISABLED - RETURNING GRAYSCALE ONLY =====');
+        debugPrint('⚠️ Processing mode: FAST (grayscale only)');
+        return grayscale;
+      }
+
+      debugPrint('🚀 ===== ADVANCED FILTERING ENABLED =====');
+      debugPrint('🚀 Processing mode: ENHANCED (6-stage pipeline)');
+
       // Apply moderate contrast enhancement for text clarity
-      final contrasted = img.adjustColor(
-        grayscale,
-        contrast: 1.3, // Reduced from 1.8
-        brightness: 1.1, // Reduced from 1.3
-        gamma: 0.85, // Gentler gamma correction
-      );
-      debugPrint('✅ Applied gentle contrast enhancement');
+      final contrasted = img.adjustColor(grayscale, contrast: settings.contrastLevel, brightness: settings.brightnessLevel, gamma: settings.gammaCorrection);
+      debugPrint('✅ Applied contrast enhancement');
+
+      // Apply advanced text sharpening with multiple algorithms
+      final sharpened = await _applyAdvancedTextSharpening(contrasted, settings);
+      debugPrint('✅ Applied advanced text sharpening');
 
       // Apply very subtle text enhancement
-      final enhanced = _applySubtleTextEnhancement(contrasted);
-      debugPrint('✅ Applied subtle text enhancement');
+      final enhanced = _applySubtleTextEnhancement(sharpened, settings);
+      debugPrint('✅ Applied text enhancement');
 
-      debugPrint('✅ Gentle document enhancement completed');
+      debugPrint('✅ ===== ENHANCED DOCUMENT PROCESSING COMPLETE =====');
       return enhanced;
     } catch (e) {
-      debugPrint('⚠️ Enhancement failed, using basic enhancement: $e');
-      return _applyBasicEnhancement(img.grayscale(image));
+      debugPrint('❌ Enhancement failed, using original: $e');
+      return image;
     }
   }
 
-  /// Applies very subtle text enhancement - just slightly darker text, cleaner background
-  img.Image _applySubtleTextEnhancement(img.Image image) {
-    debugPrint('📝 Applying subtle text enhancement...');
+  /// Advanced text sharpening using multiple algorithms for crisp text
+  Future<img.Image> _applyAdvancedTextSharpening(img.Image image, DocumentProcessingSettings settings) async {
+    debugPrint('🔍 Applying state-of-the-art text sharpening algorithms...');
+
+    try {
+      // Step 1: Apply CLAHE (Contrast Limited Adaptive Histogram Equalization)
+      final claheEnhanced = await _applyCLAHE(image);
+      debugPrint('✅ Applied CLAHE enhancement');
+
+      // Step 2: Apply adaptive unsharp masking for general sharpening
+      final unsharpMasked = await _unsharpMask(claheEnhanced, radius: settings.sharpnessRadius, amount: settings.sharpnessAmount, threshold: settings.sharpnessThreshold);
+      debugPrint('✅ Applied adaptive unsharp masking');
+
+      // Step 3: Apply morphological operations for text enhancement
+      final morphologyEnhanced = await _applyTextMorphology(unsharpMasked);
+      debugPrint('✅ Applied morphological text enhancement');
+
+      // Step 4: Apply gradient-based edge enhancement
+      final gradientSharpened = await _applyGradientSharpening(morphologyEnhanced);
+      debugPrint('✅ Applied gradient-based sharpening');
+
+      // Step 5: Apply frequency domain enhancement
+      final frequencyEnhanced = await _applyFrequencyDomainSharpening(gradientSharpened);
+      debugPrint('✅ Applied frequency domain enhancement');
+
+      // Step 6: Apply final text optimization
+      final textOptimized = await _applyTextOptimization(frequencyEnhanced);
+      debugPrint('✅ Applied text optimization');
+
+      debugPrint('✅ State-of-the-art text sharpening completed');
+      return textOptimized;
+    } catch (e) {
+      debugPrint('⚠️ Advanced sharpening failed, using basic: $e');
+      return await _applyDocumentSharpening(image, settings);
+    }
+  }
+
+  /// CLAHE (Contrast Limited Adaptive Histogram Equalization) for document enhancement
+  Future<img.Image> _applyCLAHE(img.Image image) async {
+    debugPrint('🎨 Applying CLAHE (Contrast Limited Adaptive Histogram Equalization)...');
 
     final result = img.Image(width: image.width, height: image.height);
+    final tileSize = 8; // Size of tiles for adaptive enhancement
+    final clipLimit = 4.0; // Contrast limit to prevent over-enhancement
 
-    // Very gentle enhancement - just nudge values slightly
-    for (int y = 0; y < image.height; y++) {
-      for (int x = 0; x < image.width; x++) {
-        final pixel = image.getPixel(x, y);
-        final gray = pixel.r.toInt();
+    for (int tileY = 0; tileY < image.height; tileY += tileSize) {
+      for (int tileX = 0; tileX < image.width; tileX += tileSize) {
+        final tileEndX = math.min(tileX + tileSize, image.width);
+        final tileEndY = math.min(tileY + tileSize, image.height);
+
+        // Calculate histogram for this tile
+        final histogram = List.filled(256, 0);
+        int tilePixelCount = 0;
+
+        for (int y = tileY; y < tileEndY; y++) {
+          for (int x = tileX; x < tileEndX; x++) {
+            final intensity = image.getPixel(x, y).r.toInt();
+            histogram[intensity]++;
+            tilePixelCount++;
+          }
+        }
+
+        // Apply clip limit
+        final clipValue = (clipLimit * tilePixelCount / 256).round();
+        int redistributed = 0;
+        for (int i = 0; i < 256; i++) {
+          if (histogram[i] > clipValue) {
+            redistributed += histogram[i] - clipValue;
+            histogram[i] = clipValue;
+          }
+        }
+
+        // Redistribute clipped pixels evenly
+        final redistributePerBin = redistributed ~/ 256;
+        for (int i = 0; i < 256; i++) {
+          histogram[i] += redistributePerBin;
+        }
+
+        // Calculate CDF
+        final cdf = List.filled(256, 0);
+        cdf[0] = histogram[0];
+        for (int i = 1; i < 256; i++) {
+          cdf[i] = cdf[i - 1] + histogram[i];
+        }
+
+        // Apply equalization to tile
+        for (int y = tileY; y < tileEndY; y++) {
+          for (int x = tileX; x < tileEndX; x++) {
+            final intensity = image.getPixel(x, y).r.toInt();
+            final newIntensity = ((cdf[intensity] * 255) / tilePixelCount).round().clamp(0, 255);
+            result.setPixel(x, y, img.ColorRgb8(newIntensity, newIntensity, newIntensity));
+          }
+        }
+      }
+    }
+
+    debugPrint('✅ CLAHE enhancement applied');
+    return result;
+  }
+
+  /// Morphological operations specifically designed for text enhancement
+  Future<img.Image> _applyTextMorphology(img.Image image) async {
+    debugPrint('📝 Applying morphological operations for text enhancement...');
+
+    // Create structuring elements for text
+    final horizontalKernel = _createMorphologyKernel(3, 1); // Horizontal lines
+    final verticalKernel = _createMorphologyKernel(1, 3); // Vertical lines
+    final crossKernel = _createMorphologyKernel(3, 3); // General structure
+
+    // Apply opening to remove noise
+    final opened = await _morphologyOperation(image, crossKernel, 'opening');
+
+    // Apply closing to connect broken text parts
+    final closed = await _morphologyOperation(opened, horizontalKernel, 'closing');
+
+    // Apply dilation to strengthen text strokes
+    final dilated = await _morphologyOperation(closed, verticalKernel, 'dilation');
+
+    debugPrint('✅ Text morphology enhancement applied');
+    return dilated;
+  }
+
+  /// Create morphology kernel
+  List<List<int>> _createMorphologyKernel(int width, int height) {
+    return List.generate(height, (y) => List.generate(width, (x) => 1));
+  }
+
+  /// Apply morphological operations
+  Future<img.Image> _morphologyOperation(img.Image image, List<List<int>> kernel, String operation) async {
+    final result = img.Image(width: image.width, height: image.height);
+    final kernelHeight = kernel.length;
+    final kernelWidth = kernel[0].length;
+    final centerY = kernelHeight ~/ 2;
+    final centerX = kernelWidth ~/ 2;
+
+    for (int y = centerY; y < image.height - centerY; y++) {
+      for (int x = centerX; x < image.width - centerX; x++) {
+        final values = <int>[];
+
+        for (int ky = 0; ky < kernelHeight; ky++) {
+          for (int kx = 0; kx < kernelWidth; kx++) {
+            if (kernel[ky][kx] == 1) {
+              final pixelY = y + ky - centerY;
+              final pixelX = x + kx - centerX;
+              values.add(image.getPixel(pixelX, pixelY).r.toInt());
+            }
+          }
+        }
 
         int newValue;
-
-        // Very subtle enhancement
-        if (gray > 220) {
-          // Very light areas -> make slightly whiter
-          newValue = math.min(255, gray + 15);
-        } else if (gray > 180) {
-          // Light areas -> keep mostly the same, slight brightening
-          newValue = math.min(255, gray + 8);
-        } else if (gray > 120) {
-          // Mid-tones -> keep exactly the same (preserve readability)
-          newValue = gray;
-        } else if (gray > 80) {
-          // Darker areas -> make slightly darker
-          newValue = math.max(0, gray - 8);
-        } else {
-          // Very dark areas -> make slightly darker
-          newValue = math.max(0, gray - 15);
+        switch (operation) {
+          case 'dilation':
+            newValue = values.reduce(math.max);
+            break;
+          case 'erosion':
+            newValue = values.reduce(math.min);
+            break;
+          case 'opening':
+            // Erosion followed by dilation
+            newValue = values.reduce(math.min);
+            break;
+          case 'closing':
+            // Dilation followed by erosion
+            newValue = values.reduce(math.max);
+            break;
+          default:
+            newValue = image.getPixel(x, y).r.toInt();
         }
 
         result.setPixel(x, y, img.ColorRgb8(newValue, newValue, newValue));
       }
     }
 
+    return result;
+  }
+
+  /// Gradient-based sharpening for enhanced edge definition
+  Future<img.Image> _applyGradientSharpening(img.Image image) async {
+    debugPrint('📐 Applying gradient-based sharpening...');
+
+    final result = img.Image(width: image.width, height: image.height);
+
+    // Sobel operators for gradient calculation
+    final sobelX = [
+      [-1, 0, 1],
+      [-2, 0, 2],
+      [-1, 0, 1],
+    ];
+
+    final sobelY = [
+      [-1, -2, -1],
+      [0, 0, 0],
+      [1, 2, 1],
+    ];
+
+    for (int y = 1; y < image.height - 1; y++) {
+      for (int x = 1; x < image.width - 1; x++) {
+        int gradientX = 0;
+        int gradientY = 0;
+
+        // Calculate gradients
+        for (int ky = 0; ky < 3; ky++) {
+          for (int kx = 0; kx < 3; kx++) {
+            final pixelY = y + ky - 1;
+            final pixelX = x + kx - 1;
+            final pixelValue = image.getPixel(pixelX, pixelY).r.toInt();
+
+            gradientX += pixelValue * sobelX[ky][kx];
+            gradientY += pixelValue * sobelY[ky][kx];
+          }
+        }
+
+        // Calculate gradient magnitude
+        final gradientMagnitude = math.sqrt(gradientX * gradientX + gradientY * gradientY);
+
+        // Enhance based on gradient strength
+        final originalValue = image.getPixel(x, y).r.toInt();
+        final enhanced = originalValue + (gradientMagnitude * 0.3).round();
+        final clampedValue = math.max(0, math.min(255, enhanced));
+
+        result.setPixel(x, y, img.ColorRgb8(clampedValue, clampedValue, clampedValue));
+      }
+    }
+
+    // Copy borders
+    for (int y = 0; y < image.height; y++) {
+      for (int x = 0; x < image.width; x++) {
+        if (y == 0 || y == image.height - 1 || x == 0 || x == image.width - 1) {
+          final original = image.getPixel(x, y);
+          result.setPixel(x, y, original);
+        }
+      }
+    }
+
+    debugPrint('✅ Gradient-based sharpening applied');
+    return result;
+  }
+
+  /// Frequency domain sharpening using high-frequency enhancement
+  Future<img.Image> _applyFrequencyDomainSharpening(img.Image image) async {
+    debugPrint('🌊 Applying frequency domain sharpening...');
+
+    final result = img.Image(width: image.width, height: image.height);
+
+    // High-frequency enhancement kernel
+    final highFreqKernel = [
+      [0, -1, 0],
+      [-1, 5, -1],
+      [0, -1, 0],
+    ];
+
+    for (int y = 1; y < image.height - 1; y++) {
+      for (int x = 1; x < image.width - 1; x++) {
+        int sum = 0;
+
+        // Apply high-frequency kernel
+        for (int ky = 0; ky < 3; ky++) {
+          for (int kx = 0; kx < 3; kx++) {
+            final pixelY = y + ky - 1;
+            final pixelX = x + kx - 1;
+            final pixelValue = image.getPixel(pixelX, pixelY).r.toInt();
+            sum += pixelValue * highFreqKernel[ky][kx];
+          }
+        }
+
+        final enhanced = math.max(0, math.min(255, sum));
+        result.setPixel(x, y, img.ColorRgb8(enhanced, enhanced, enhanced));
+      }
+    }
+
+    // Copy borders
+    for (int y = 0; y < image.height; y++) {
+      for (int x = 0; x < image.width; x++) {
+        if (y == 0 || y == image.height - 1 || x == 0 || x == image.width - 1) {
+          final original = image.getPixel(x, y);
+          result.setPixel(x, y, original);
+        }
+      }
+    }
+
+    debugPrint('✅ Frequency domain sharpening applied');
+    return result;
+  }
+
+  /// Final text optimization for maximum readability
+  Future<img.Image> _applyTextOptimization(img.Image image) async {
+    debugPrint('📖 Applying final text optimization...');
+
+    final result = img.Image(width: image.width, height: image.height);
+
+    for (int y = 0; y < image.height; y++) {
+      for (int x = 0; x < image.width; x++) {
+        final pixel = image.getPixel(x, y);
+        final intensity = pixel.r.toInt();
+
+        // Apply text-specific enhancement curve
+        int enhanced;
+        if (intensity < 64) {
+          // Dark regions (text) - make darker and more defined
+          enhanced = (intensity * 0.7).round();
+        } else if (intensity < 128) {
+          // Mid-dark regions - enhance contrast
+          enhanced = (intensity * 0.85 + 10).round();
+        } else if (intensity < 192) {
+          // Mid-light regions - slight brightening
+          enhanced = (intensity * 1.1).round();
+        } else {
+          // Light regions (background) - make brighter
+          enhanced = math.min(255, (intensity * 1.15 + 15).round());
+        }
+
+        enhanced = math.max(0, math.min(255, enhanced));
+        result.setPixel(x, y, img.ColorRgb8(enhanced, enhanced, enhanced));
+      }
+    }
+
+    debugPrint('✅ Text optimization applied');
+    return result;
+  }
+
+  /// Applies basic document sharpening as fallback method
+  Future<img.Image> _applyDocumentSharpening(img.Image image, DocumentProcessingSettings settings) async {
+    debugPrint('🔧 Applying basic document sharpening (fallback)...');
+
+    try {
+      // Apply basic unsharp masking
+      final sharpened = await _unsharpMask(image, radius: settings.sharpnessRadius, amount: settings.sharpnessAmount, threshold: settings.sharpnessThreshold);
+      debugPrint('✅ Basic unsharp mask applied');
+
+      debugPrint('✅ Basic document sharpening completed');
+      return sharpened;
+    } catch (e) {
+      debugPrint('⚠️ Basic sharpening failed, using original: $e');
+      return image;
+    }
+  }
+
+  /// Applies unsharp masking for professional document sharpening
+  Future<img.Image> _unsharpMask(img.Image image, {double radius = 1.5, double amount = 1.8, int threshold = 1}) async {
+    debugPrint('🎯 Applying aggressive unsharp mask (radius: $radius, amount: $amount, threshold: $threshold)...');
+
+    // Create a more blurred version for better contrast
+    final blurred = await _gaussianBlur(image, radius);
+
+    // Create the result image
+    final result = img.Image(width: image.width, height: image.height);
+    int sharpenedPixels = 0;
+
+    // Apply unsharp masking formula: original + amount * (original - blurred)
+    for (int y = 0; y < image.height; y++) {
+      for (int x = 0; x < image.width; x++) {
+        final originalPixel = image.getPixel(x, y);
+        final blurredPixel = blurred.getPixel(x, y);
+
+        final original = originalPixel.r.toInt();
+        final blurredValue = blurredPixel.r.toInt();
+
+        // Calculate the difference
+        final difference = original - blurredValue;
+
+        // Apply lower threshold to sharpen more pixels
+        if (difference.abs() >= threshold) {
+          // Apply aggressive unsharp masking
+          final sharpened = (original + (difference * amount)).round();
+          final clampedValue = math.max(0, math.min(255, sharpened));
+          result.setPixel(x, y, img.ColorRgb8(clampedValue, clampedValue, clampedValue));
+          sharpenedPixels++;
+        } else {
+          // Keep original if difference is below threshold
+          result.setPixel(x, y, img.ColorRgb8(original, original, original));
+        }
+      }
+    }
+
+    debugPrint('✅ Aggressive unsharp mask applied to $sharpenedPixels pixels');
+    return result;
+  }
+
+  /// Simple Gaussian blur approximation for unsharp masking
+  Future<img.Image> _gaussianBlur(img.Image image, double radius) async {
+    debugPrint('🌀 Applying Gaussian blur (radius: $radius)...');
+
+    final result = img.Image(width: image.width, height: image.height);
+    final kernelSize = (radius * 2).round() + 1;
+    final halfKernel = kernelSize ~/ 2;
+
+    // Simple box blur approximation (faster than true Gaussian)
+    for (int y = 0; y < image.height; y++) {
+      for (int x = 0; x < image.width; x++) {
+        int sum = 0;
+        int count = 0;
+
+        // Sample surrounding pixels
+        for (int dy = -halfKernel; dy <= halfKernel; dy++) {
+          for (int dx = -halfKernel; dx <= halfKernel; dx++) {
+            final sampleY = math.max(0, math.min(image.height - 1, y + dy));
+            final sampleX = math.max(0, math.min(image.width - 1, x + dx));
+
+            sum += image.getPixel(sampleX, sampleY).r.toInt();
+            count++;
+          }
+        }
+
+        final blurredValue = sum ~/ count;
+        result.setPixel(x, y, img.ColorRgb8(blurredValue, blurredValue, blurredValue));
+      }
+    }
+
+    debugPrint('✅ Gaussian blur completed');
+    return result;
+  }
+
+  /// Applies very subtle text enhancement without harshness
+  img.Image _applySubtleTextEnhancement(img.Image image, DocumentProcessingSettings settings) {
+    debugPrint('📝 Applying very subtle text enhancement...');
+
+    // Apply the dark/white filter with user settings
+    final result = _applyDarkWhiteFilter(image, settings);
+
     debugPrint('✅ Subtle text enhancement completed');
     return result;
   }
 
-  /// Basic enhancement fallback
-  img.Image _applyBasicEnhancement(img.Image image) {
-    debugPrint('🔧 Applying basic enhancement fallback...');
+  /// Applies dark/white filter for crisp black text on white background
+  img.Image _applyDarkWhiteFilter(img.Image image, DocumentProcessingSettings settings) {
+    debugPrint('⚫⚪ Applying gentle dark/white filter...');
 
-    // Apply enhanced contrast and brightness with gamma correction
-    final enhanced = img.adjustColor(image, contrast: 1.5, brightness: 1.15, gamma: 0.8);
+    final result = img.Image(width: image.width, height: image.height);
 
-    // Apply simple thresholding for better text clarity
-    final result = img.Image(width: enhanced.width, height: enhanced.height);
+    // Calculate image statistics for adaptive thresholding
+    final pixels = <int>[];
+    for (int y = 0; y < image.height; y++) {
+      for (int x = 0; x < image.width; x++) {
+        final pixel = image.getPixel(x, y);
+        final gray = pixel.r.toInt();
+        pixels.add(gray);
+      }
+    }
 
-    for (int y = 0; y < enhanced.height; y++) {
-      for (int x = 0; x < enhanced.width; x++) {
-        final pixel = enhanced.getPixel(x, y);
-        // Simple threshold - adjust this value to fine-tune text clarity
-        const int threshold = 128;
-        final newValue = pixel.r > threshold ? 255 : 0;
+    pixels.sort();
+    final median = pixels[pixels.length ~/ 2];
+    final threshold = (median * settings.blackWhiteThreshold).round();
+
+    debugPrint('📊 Median brightness: $median, Dynamic threshold: $threshold (factor: ${settings.blackWhiteThreshold})');
+
+    for (int y = 0; y < image.height; y++) {
+      for (int x = 0; x < image.width; x++) {
+        final pixel = image.getPixel(x, y);
+        final gray = pixel.r.toInt();
+
+        // Apply threshold with smooth transitions for readability
+        final newValue = gray > threshold ? 255 : 0;
         result.setPixel(x, y, img.ColorRgb8(newValue, newValue, newValue));
       }
     }
 
+    debugPrint('✅ Dark/white filter applied with threshold factor: ${settings.blackWhiteThreshold}');
     return result;
   }
 

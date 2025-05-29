@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:document_scanner/core/providers/theme_provider.dart';
 import 'package:document_scanner/core/providers/storage_provider.dart';
+import 'package:document_scanner/core/providers/document_settings_provider.dart';
 import 'package:document_scanner/core/services/permission_service.dart';
 import 'package:document_scanner/core/services/storage_service.dart';
 
@@ -14,8 +15,9 @@ class SettingsPage extends ConsumerWidget {
     final theme = Theme.of(context);
     final themeMode = ref.watch(themeProvider);
     final saveLocation = ref.watch(saveLocationProvider);
+    final documentSettings = ref.watch(documentSettingsProvider);
 
-    debugPrint('🔧 Building SettingsPage with theme: $themeMode, saveLocation: $saveLocation');
+    debugPrint('🔧 Building SettingsPage with theme: $themeMode, saveLocation: $saveLocation, documentSettings: $documentSettings');
 
     return Scaffold(
       backgroundColor: theme.colorScheme.surface,
@@ -23,6 +25,10 @@ class SettingsPage extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          _buildSectionTitle('Document Processing', theme),
+          _buildDocumentProcessingSettings(context, ref, documentSettings, theme),
+
+          const SizedBox(height: 24),
           _buildSectionTitle('Appearance', theme),
           _buildThemeSettings(context, ref, themeMode, theme),
 
@@ -169,6 +175,183 @@ class SettingsPage extends ConsumerWidget {
           ),
           const Divider(height: 1),
           ListTile(leading: Icon(Icons.help, color: theme.colorScheme.primary), title: const Text('Help & Support'), trailing: const Icon(Icons.open_in_new), onTap: () => _showHelp(context)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDocumentProcessingSettings(BuildContext context, WidgetRef ref, dynamic documentSettings, ThemeData theme) {
+    debugPrint('🎛️ Building document processing settings - enableFiltering: ${documentSettings.enableFiltering}');
+
+    return Card(
+      child: Column(
+        children: [
+          // Main toggle with better visibility
+          Container(
+            decoration: BoxDecoration(
+              color: documentSettings.enableFiltering ? theme.colorScheme.primaryContainer.withOpacity(0.3) : theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
+              borderRadius: const BorderRadius.only(topLeft: Radius.circular(12), topRight: Radius.circular(12)),
+            ),
+            child: ListTile(
+              leading: Icon(
+                documentSettings.enableFiltering ? Icons.auto_fix_high : Icons.auto_fix_off,
+                color: documentSettings.enableFiltering ? theme.colorScheme.primary : theme.colorScheme.onSurfaceVariant,
+              ),
+              title: Text(
+                'Document Enhancement',
+                style: TextStyle(fontWeight: FontWeight.bold, color: documentSettings.enableFiltering ? theme.colorScheme.primary : theme.colorScheme.onSurfaceVariant),
+              ),
+              subtitle: Text(
+                documentSettings.enableFiltering ? 'Advanced text sharpening & processing enabled' : 'Only basic grayscale conversion (faster)',
+                style: TextStyle(color: documentSettings.enableFiltering ? theme.colorScheme.onPrimaryContainer : theme.colorScheme.onSurfaceVariant),
+              ),
+              trailing: Switch(
+                value: documentSettings.enableFiltering,
+                onChanged: (value) {
+                  debugPrint('🔄 Toggle filtering: $value');
+                  ref.read(documentSettingsProvider.notifier).toggleFiltering(value);
+                },
+                activeColor: theme.colorScheme.primary,
+              ),
+            ),
+          ),
+          if (documentSettings.enableFiltering) ...[
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Advanced Text Enhancement Settings', style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.primary, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  Text(
+                    'These settings control the advanced 6-stage text sharpening pipeline for maximum readability.',
+                    style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: Icon(Icons.tune, color: theme.colorScheme.primary),
+              title: const Text('Black/White Threshold'),
+              subtitle: Text('Text clarity adjustment: ${(documentSettings.blackWhiteThreshold * 100).round()}%'),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              child: Slider(
+                value: documentSettings.blackWhiteThreshold,
+                min: 0.3,
+                max: 0.9,
+                divisions: 30,
+                label: '${(documentSettings.blackWhiteThreshold * 100).round()}%',
+                onChanged: (value) => ref.read(documentSettingsProvider.notifier).updateBlackWhiteThreshold(value),
+              ),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: Icon(Icons.auto_fix_high, color: theme.colorScheme.primary),
+              title: const Text('Sharpness Amount'),
+              subtitle: Text('Edge enhancement strength: ${documentSettings.sharpnessAmount.toStringAsFixed(1)}'),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              child: Slider(
+                value: documentSettings.sharpnessAmount,
+                min: 0.5,
+                max: 3.0,
+                divisions: 25,
+                label: documentSettings.sharpnessAmount.toStringAsFixed(1),
+                onChanged: (value) => ref.read(documentSettingsProvider.notifier).updateSharpnessAmount(value),
+              ),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: Icon(Icons.blur_on, color: theme.colorScheme.primary),
+              title: const Text('Sharpness Radius'),
+              subtitle: Text('Sharpening area size: ${documentSettings.sharpnessRadius.toStringAsFixed(1)}'),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              child: Slider(
+                value: documentSettings.sharpnessRadius,
+                min: 0.5,
+                max: 3.0,
+                divisions: 25,
+                label: documentSettings.sharpnessRadius.toStringAsFixed(1),
+                onChanged: (value) => ref.read(documentSettingsProvider.notifier).updateSharpnessRadius(value),
+              ),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: Icon(Icons.contrast, color: theme.colorScheme.primary),
+              title: const Text('Contrast Level'),
+              subtitle: Text('Text contrast enhancement: ${documentSettings.contrastLevel.toStringAsFixed(1)}'),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              child: Slider(
+                value: documentSettings.contrastLevel,
+                min: 0.8,
+                max: 2.0,
+                divisions: 24,
+                label: documentSettings.contrastLevel.toStringAsFixed(1),
+                onChanged: (value) => ref.read(documentSettingsProvider.notifier).updateContrastLevel(value),
+              ),
+            ),
+            const Divider(height: 1),
+            Container(
+              padding: const EdgeInsets.all(16.0),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.secondaryContainer.withOpacity(0.3),
+                borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(12), bottomRight: Radius.circular(12)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.info_outline, size: 16, color: theme.colorScheme.onSecondaryContainer),
+                      const SizedBox(width: 8),
+                      Text('Enhancement Pipeline Active', style: theme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.bold, color: theme.colorScheme.onSecondaryContainer)),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'CLAHE → Unsharp Mask → Morphology → Gradient → Frequency → Text Optimization',
+                    style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSecondaryContainer, fontFamily: 'monospace'),
+                  ),
+                ],
+              ),
+            ),
+          ] else ...[
+            Container(
+              padding: const EdgeInsets.all(16.0),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
+                borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(12), bottomRight: Radius.circular(12)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.speed, size: 16, color: theme.colorScheme.onSurfaceVariant),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Fast Mode: Only grayscale conversion (Enable enhancement for better text quality)',
+                      style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          const Divider(height: 1),
+          ListTile(
+            leading: Icon(Icons.refresh, color: theme.colorScheme.primary),
+            title: const Text('Reset to Defaults'),
+            subtitle: const Text('Restore original processing settings'),
+            onTap: () => _showResetDialog(context, ref),
+          ),
         ],
       ),
     );
@@ -488,6 +671,31 @@ class SettingsPage extends ConsumerWidget {
               ),
             ),
             actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('OK'))],
+          ),
+    );
+  }
+
+  void _showResetDialog(BuildContext context, WidgetRef ref) {
+    debugPrint('🔄 Showing document settings reset dialog');
+    showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Reset Document Settings'),
+            content: const Text('This will reset all document processing settings to their default values. Continue?'),
+            actions: [
+              TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+              TextButton(
+                onPressed: () async {
+                  Navigator.of(context).pop();
+                  await ref.read(documentSettingsProvider.notifier).resetToDefaults();
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Document settings reset to defaults'), backgroundColor: Colors.green));
+                  }
+                },
+                child: const Text('Reset'),
+              ),
+            ],
           ),
     );
   }

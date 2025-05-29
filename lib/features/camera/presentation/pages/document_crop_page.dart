@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:document_scanner/core/services/opencv_service.dart';
+import 'package:document_scanner/core/providers/document_settings_provider.dart';
 import 'package:document_scanner/features/camera/presentation/widgets/document_corner_adjuster.dart';
 
 class DocumentCropPage extends ConsumerStatefulWidget {
@@ -20,6 +21,8 @@ class DocumentCropPage extends ConsumerStatefulWidget {
 class _DocumentCropPageState extends ConsumerState<DocumentCropPage> {
   late List<Offset> currentCorners;
   bool isProcessing = false;
+  File? processedImage;
+  bool showingPreview = false;
 
   @override
   void initState() {
@@ -54,12 +57,19 @@ class _DocumentCropPageState extends ConsumerState<DocumentCropPage> {
     });
 
     try {
-      // Crop the document using the current corners
-      final croppedFile = await OpenCVService().cropDocumentWithCorners(File(widget.imagePath), currentCorners);
+      // Get current document processing settings
+      final settings = ref.read(documentSettingsProvider);
+      debugPrint('🎛️ Using document settings: $settings');
+
+      // Crop the document using the current corners and settings
+      final croppedFile = await OpenCVService().cropDocumentWithCorners(File(widget.imagePath), currentCorners, settings);
 
       if (croppedFile != null && mounted) {
-        // Return the cropped image path
-        context.pop(croppedFile.path);
+        setState(() {
+          processedImage = croppedFile;
+          showingPreview = true;
+        });
+        debugPrint('✅ Document processed, showing preview');
       } else {
         _showErrorDialog('Failed to crop document');
       }
@@ -72,6 +82,26 @@ class _DocumentCropPageState extends ConsumerState<DocumentCropPage> {
           isProcessing = false;
         });
       }
+    }
+  }
+
+  Future<void> _confirmAndSave() async {
+    if (processedImage != null) {
+      // Return the processed image path
+      context.pop(processedImage!.path);
+    }
+  }
+
+  void _backToEdit() {
+    setState(() {
+      processedImage = null;
+      showingPreview = false;
+    });
+  }
+
+  void _showFullScreenPreview() {
+    if (processedImage != null) {
+      Navigator.of(context).push(MaterialPageRoute(builder: (context) => _FullScreenImagePreview(imagePath: processedImage!.path)));
     }
   }
 
@@ -95,83 +125,88 @@ class _DocumentCropPageState extends ConsumerState<DocumentCropPage> {
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
-        title: const Text('Adjust Document Corners'),
-        actions: [IconButton(onPressed: _resetCorners, icon: const Icon(Icons.refresh), tooltip: 'Reset corners')],
+        leading: IconButton(onPressed: () => context.pop(), icon: const Icon(Icons.close), tooltip: 'Cancel'),
+        title: Text(showingPreview ? 'Document Preview' : 'Adjust Document Corners'),
+        actions: showingPreview ? _buildPreviewActions() : _buildEditActions(),
       ),
-      body: Stack(
-        children: [
-          // Document corner adjuster
-          DocumentCornerAdjuster(imagePath: widget.imagePath, initialCorners: currentCorners, imageWidth: widget.imageWidth, imageHeight: widget.imageHeight, onCornersChanged: _onCornersChanged),
-
-          // Instructions overlay
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.black54, Colors.transparent])),
-              child: Column(
-                children: [
-                  const Text('Drag the corner points to adjust the document boundaries', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w500), textAlign: TextAlign.center),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      _buildCornerLegend('TL', 'Top-Left'),
-                      const SizedBox(width: 16),
-                      _buildCornerLegend('TR', 'Top-Right'),
-                      const SizedBox(width: 16),
-                      _buildCornerLegend('BR', 'Bottom-Right'),
-                      const SizedBox(width: 16),
-                      _buildCornerLegend('BL', 'Bottom-Left'),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          // Controls overlay
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: Container(
-              padding: const EdgeInsets.all(20),
-              decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Colors.black54])),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  FloatingActionButton(heroTag: "cancel", onPressed: () => context.pop(), backgroundColor: Colors.red, child: const Icon(Icons.close)),
-                  FloatingActionButton.extended(
-                    heroTag: "crop",
-                    onPressed: isProcessing ? null : _cropDocument,
-                    backgroundColor: Colors.green,
-                    icon: isProcessing ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Icon(Icons.crop),
-                    label: Text(isProcessing ? 'Processing...' : 'Crop Document'),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
+      body: showingPreview ? _buildPreviewBody() : _buildEditBody(),
     );
   }
 
-  Widget _buildCornerLegend(String label, String description) {
+  List<Widget> _buildEditActions() {
+    return [
+      IconButton(onPressed: _resetCorners, icon: const Icon(Icons.refresh), tooltip: 'Reset corners'),
+      IconButton(
+        onPressed: isProcessing ? null : _cropDocument,
+        icon: isProcessing ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Icon(Icons.edit),
+        tooltip: isProcessing ? 'Processing...' : 'Edit Image',
+      ),
+    ];
+  }
+
+  List<Widget> _buildPreviewActions() {
+    return [IconButton(onPressed: _backToEdit, icon: const Icon(Icons.edit), tooltip: 'Back to Edit'), IconButton(onPressed: _confirmAndSave, icon: const Icon(Icons.check), tooltip: 'Save Document')];
+  }
+
+  Widget _buildEditBody() {
+    return DocumentCornerAdjuster(imagePath: widget.imagePath, initialCorners: currentCorners, imageWidth: widget.imageWidth, imageHeight: widget.imageHeight, onCornersChanged: _onCornersChanged);
+  }
+
+  Widget _buildPreviewBody() {
+    if (processedImage == null) return const SizedBox();
+
     return Column(
       children: [
-        Container(
-          width: 30,
-          height: 30,
-          decoration: const BoxDecoration(color: Colors.blue, shape: BoxShape.circle, border: Border.fromBorderSide(BorderSide(color: Colors.white, width: 2))),
-          child: Center(child: Text(label, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold))),
+        Expanded(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: GestureDetector(
+                onTap: _showFullScreenPreview,
+                child: Container(
+                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), boxShadow: [BoxShadow(color: Colors.white.withOpacity(0.1), blurRadius: 10, spreadRadius: 2)]),
+                  child: ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.file(processedImage!, fit: BoxFit.contain)),
+                ),
+              ),
+            ),
+          ),
         ),
-        const SizedBox(height: 4),
-        Text(description, style: const TextStyle(color: Colors.white, fontSize: 10), textAlign: TextAlign.center),
+        Container(
+          padding: const EdgeInsets.all(16),
+          child: const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [Icon(Icons.touch_app, color: Colors.white54, size: 20), SizedBox(width: 8), Text('Tap image for full-screen preview', style: TextStyle(color: Colors.white54, fontSize: 14))],
+          ),
+        ),
       ],
+    );
+  }
+}
+
+// Full-screen image preview widget
+class _FullScreenImagePreview extends StatelessWidget {
+  final String imagePath;
+
+  const _FullScreenImagePreview({required this.imagePath});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        title: const Text('Document Preview'),
+        leading: IconButton(onPressed: () => Navigator.of(context).pop(), icon: const Icon(Icons.close)),
+      ),
+      body: Center(child: InteractiveViewer(minScale: 0.5, maxScale: 4.0, child: Image.file(File(imagePath), fit: BoxFit.contain))),
+      bottomNavigationBar: Container(
+        padding: const EdgeInsets.all(16),
+        color: Colors.black,
+        child: const Row(
+          children: [Icon(Icons.zoom_in, color: Colors.white54, size: 20), SizedBox(width: 8), Text('Pinch to zoom, drag to pan', style: TextStyle(color: Colors.white54, fontSize: 14))],
+        ),
+      ),
     );
   }
 }
