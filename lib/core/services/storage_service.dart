@@ -7,6 +7,7 @@ import 'package:document_scanner/core/models/scan_session_model.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 import 'package:file_picker/file_picker.dart';
+import 'package:document_scanner/core/services/permission_service.dart';
 
 class StorageService {
   static late Box<DocumentModel> _documentsBox;
@@ -181,46 +182,54 @@ class StorageService {
   /// Save PDF file using SAF with user confirmation
   static Future<String> savePdfFile(Uint8List pdfData, String fileName) async {
     try {
-      debugPrint('💾 Saving PDF file with SAF: $fileName');
+      debugPrint('💾 Saving PDF file: $fileName (${pdfData.length} bytes)');
 
-      // Use SAF to let user choose where to save the PDF with timeout
-      final result = await FilePicker.platform
-          .saveFile(dialogTitle: 'Save PDF Document', fileName: fileName, type: FileType.custom, allowedExtensions: ['pdf'], bytes: pdfData)
-          .timeout(
-            const Duration(minutes: 3),
-            onTimeout: () {
-              debugPrint('⚠️ FilePicker.saveFile timed out after 3 minutes');
-              return null;
-            },
-          );
+      // Check if we have storage permissions first
+      final hasPermissions = await PermissionService.checkStoragePermissions();
+      debugPrint('🔐 Storage permissions available: $hasPermissions');
 
-      if (result != null) {
-        debugPrint('✅ PDF saved via SAF to: $result');
+      // Always try app storage first for reliability
+      debugPrint('📱 Attempting to save to app storage first...');
+      try {
+        final appStoragePath = await _savePdfToAppStorage(pdfData, fileName);
+        debugPrint('✅ PDF saved to app storage successfully: $appStoragePath');
+        return appStoragePath;
+      } catch (appStorageError) {
+        debugPrint('❌ App storage save failed: $appStorageError');
+      }
 
-        // Verify the file was actually saved
+      // If app storage fails and we have permissions, try SAF as fallback
+      if (hasPermissions) {
+        debugPrint('🔄 Attempting SAF save as fallback...');
         try {
-          final savedFile = File(result);
-          if (await savedFile.exists()) {
-            final fileSize = await savedFile.length();
-            debugPrint('✅ SAF file verified: $result (${fileSize} bytes)');
+          final result = await FilePicker.platform
+              .saveFile(dialogTitle: 'Save PDF Document', fileName: fileName, type: FileType.custom, allowedExtensions: ['pdf'], bytes: pdfData)
+              .timeout(
+                const Duration(minutes: 2),
+                onTimeout: () {
+                  debugPrint('⚠️ SAF save timed out after 2 minutes');
+                  return null;
+                },
+              );
+
+          if (result != null) {
+            debugPrint('✅ PDF saved via SAF to: $result');
             return result;
           } else {
-            debugPrint('⚠️ SAF file not found after save, falling back to app storage');
-            throw Exception('SAF saved file not found');
+            debugPrint('⚠️ SAF save cancelled by user or timed out');
           }
-        } catch (e) {
-          debugPrint('⚠️ Error verifying SAF file: $e, falling back to app storage');
-          throw Exception('SAF file verification failed: $e');
+        } catch (safError) {
+          debugPrint('❌ SAF save failed: $safError');
         }
-      } else {
-        // User cancelled or timed out, fall back to app storage
-        debugPrint('⚠️ User cancelled SAF or operation timed out, falling back to app storage');
-        return await _savePdfToAppStorage(pdfData, fileName);
       }
+
+      // Final fallback - try internal storage
+      debugPrint('🔄 Final fallback: attempting internal storage...');
+      return await _savePdfToInternalStorage(pdfData, fileName);
     } catch (e) {
-      debugPrint('❌ Error saving PDF via SAF: $e');
-      // Fall back to app storage
-      return await _savePdfToAppStorage(pdfData, fileName);
+      debugPrint('❌ All PDF save methods failed: $e');
+      // Last resort - try internal storage
+      return await _savePdfToInternalStorage(pdfData, fileName);
     }
   }
 
@@ -240,30 +249,50 @@ class StorageService {
 
       debugPrint('✅ PDF saved to app storage: $filePath');
 
-      // Verify file exists
+      // Verify file exists and has correct size
       if (await file.exists()) {
         final fileSize = await file.length();
-        debugPrint('✅ PDF file verified: ${file.path} (${fileSize} bytes)');
-        return file.path;
+        if (fileSize == pdfData.length) {
+          debugPrint('✅ PDF file verified: ${file.path} (${fileSize} bytes)');
+          return file.path;
+        } else {
+          throw Exception('PDF file size mismatch: expected ${pdfData.length}, got $fileSize');
+        }
       } else {
         throw Exception('PDF file was not created successfully');
       }
     } catch (e) {
       debugPrint('❌ Error saving PDF to app storage: $e');
+      rethrow;
+    }
+  }
 
-      // Final fallback to internal storage
-      try {
-        final defaultDir = await getDefaultSaveLocation();
-        await ensureDirectoryExists(defaultDir);
-        final filePath = path.join(defaultDir, fileName);
-        final file = File(filePath);
-        await file.writeAsBytes(pdfData);
-        debugPrint('📱 PDF saved to internal storage final fallback: $filePath');
-        return file.path;
-      } catch (fallbackError) {
-        debugPrint('❌ Final fallback PDF save also failed: $fallbackError');
-        rethrow;
+  /// Final fallback to save PDF to internal storage
+  static Future<String> _savePdfToInternalStorage(Uint8List pdfData, String fileName) async {
+    try {
+      debugPrint('🏠 Saving PDF to internal storage (final fallback): $fileName');
+
+      final defaultDir = await getDefaultSaveLocation();
+      await ensureDirectoryExists(defaultDir);
+      final filePath = path.join(defaultDir, fileName);
+      final file = File(filePath);
+      await file.writeAsBytes(pdfData);
+
+      // Verify file exists and has correct size
+      if (await file.exists()) {
+        final fileSize = await file.length();
+        if (fileSize == pdfData.length) {
+          debugPrint('✅ PDF saved to internal storage: $filePath (${fileSize} bytes)');
+          return file.path;
+        } else {
+          throw Exception('PDF file size mismatch in internal storage: expected ${pdfData.length}, got $fileSize');
+        }
+      } else {
+        throw Exception('PDF file creation failed in internal storage');
       }
+    } catch (e) {
+      debugPrint('❌ Final fallback PDF save failed: $e');
+      rethrow;
     }
   }
 

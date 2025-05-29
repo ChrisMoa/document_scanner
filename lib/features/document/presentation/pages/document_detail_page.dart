@@ -26,6 +26,7 @@ class _DocumentDetailPageState extends ConsumerState<DocumentDetailPage> {
   DocumentModel? _document;
   bool _isGeneratingPdf = false;
   bool _isUploading = false;
+  Map<String, dynamic>? _pdfInfo;
 
   @override
   void initState() {
@@ -34,13 +35,74 @@ class _DocumentDetailPageState extends ConsumerState<DocumentDetailPage> {
     _loadDocument();
   }
 
-  void _loadDocument() {
+  Future<void> _loadDocument() async {
     debugPrint('📖 Loading document: ${widget.documentId}');
+
     final document = ref.read(documentsProvider.notifier).getDocument(widget.documentId);
-    setState(() {
-      _document = document;
-    });
-    debugPrint('📖 Document loaded: ${document?.name ?? 'Not found'}');
+
+    if (document != null) {
+      debugPrint('🔍 Retrieved document: ${document.name} (ID: ${document.id})');
+      setState(() {
+        _document = document;
+      });
+
+      // If it's a PDF, get detailed info
+      if (document.pdfPath != null) {
+        await _analyzePdfFile(document.pdfPath!);
+      }
+
+      debugPrint('📖 Document loaded: ${document.name}');
+    } else {
+      debugPrint('❌ Document not found: ${widget.documentId}');
+    }
+  }
+
+  Future<void> _analyzePdfFile(String pdfPath) async {
+    try {
+      debugPrint('🔍 Analyzing PDF file: $pdfPath');
+
+      final file = File(pdfPath);
+      final exists = await file.exists();
+
+      final info = <String, dynamic>{'path': pdfPath, 'exists': exists, 'size': 0, 'isValid': false, 'error': null};
+
+      if (exists) {
+        try {
+          final size = await file.length();
+          info['size'] = size;
+
+          if (size > 0) {
+            // Check PDF header
+            final bytes = await file.readAsBytes();
+            if (bytes.length >= 4 && bytes[0] == 0x25 && bytes[1] == 0x50 && bytes[2] == 0x44 && bytes[3] == 0x46) {
+              info['isValid'] = true;
+              debugPrint('✅ PDF file is valid: $size bytes');
+            } else {
+              info['error'] = 'Invalid PDF header';
+              debugPrint('❌ Invalid PDF header');
+            }
+          } else {
+            info['error'] = 'Empty file';
+            debugPrint('❌ PDF file is empty');
+          }
+        } catch (e) {
+          info['error'] = 'Read error: $e';
+          debugPrint('❌ Error reading PDF: $e');
+        }
+      } else {
+        info['error'] = 'File does not exist';
+        debugPrint('❌ PDF file does not exist: $pdfPath');
+      }
+
+      setState(() {
+        _pdfInfo = info;
+      });
+    } catch (e) {
+      debugPrint('❌ Error analyzing PDF: $e');
+      setState(() {
+        _pdfInfo = {'error': 'Analysis failed: $e'};
+      });
+    }
   }
 
   @override
@@ -134,6 +196,65 @@ class _DocumentDetailPageState extends ConsumerState<DocumentDetailPage> {
                   isUploading: _isUploading,
                 ),
               ],
+            ),
+          ),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // PDF Debug Information (if available)
+                  if (_pdfInfo != null && _document?.pdfPath != null) ...[
+                    Card(
+                      color: _pdfInfo!['isValid'] == true ? Colors.green.shade50 : Colors.red.shade50,
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(_pdfInfo!['isValid'] == true ? Icons.check_circle : Icons.error, color: _pdfInfo!['isValid'] == true ? Colors.green : Colors.red),
+                                const SizedBox(width: 8),
+                                Text('PDF File Information', style: TextStyle(fontWeight: FontWeight.bold, color: _pdfInfo!['isValid'] == true ? Colors.green.shade700 : Colors.red.shade700)),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            _buildInfoRow('File Exists', _pdfInfo!['exists']?.toString() ?? 'Unknown'),
+                            _buildInfoRow('File Size', '${_pdfInfo!['size'] ?? 0} bytes'),
+                            _buildInfoRow('Valid PDF', _pdfInfo!['isValid']?.toString() ?? 'Unknown'),
+                            if (_pdfInfo!['error'] != null) _buildInfoRow('Error', _pdfInfo!['error'].toString()),
+                            const SizedBox(height: 8),
+                            Text('Path: ${_pdfInfo!['path']}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+
+                  // Document metadata
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Document Details', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 12),
+                          _buildInfoRow('Name', _document!.name),
+                          _buildInfoRow('Created', _formatDate(_document!.createdAt)),
+                          _buildInfoRow('Updated', _formatDate(_document!.updatedAt)),
+                          _buildInfoRow('Type', _document!.pdfPath != null ? 'PDF Document' : 'Image Document'),
+                          if (_document!.pdfPath != null) _buildInfoRow('Pages', _document!.imagePaths.isEmpty ? 'Unknown' : '${_document!.imagePaths.length}'),
+                          if (_document!.imagePaths.isNotEmpty) _buildInfoRow('Images', '${_document!.imagePaths.length}'),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
           Expanded(
@@ -464,6 +585,13 @@ class _DocumentDetailPageState extends ConsumerState<DocumentDetailPage> {
 
   String _formatDate(DateTime date) {
     return '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+  }
+
+  Widget _buildInfoRow(String label, String value) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)), Text(value, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold))],
+    );
   }
 }
 

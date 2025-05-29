@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:document_scanner/core/services/storage_service.dart';
+import 'package:document_scanner/core/services/permission_service.dart';
 import 'package:document_scanner/core/providers/theme_provider.dart';
 import 'package:document_scanner/core/router/app_router.dart';
 import 'package:document_scanner/core/theme/app_theme.dart';
@@ -26,6 +27,17 @@ void main() async {
   } catch (e) {
     debugPrint('❌ Error initializing Storage Service: $e');
     rethrow;
+  }
+
+  debugPrint('🔐 Requesting storage permissions...');
+  try {
+    final permissionsGranted = await PermissionService.requestStoragePermissions();
+    debugPrint('📋 Storage permissions granted: $permissionsGranted');
+    if (!permissionsGranted) {
+      debugPrint('⚠️ Some storage permissions were denied - app will use limited storage');
+    }
+  } catch (e) {
+    debugPrint('❌ Error requesting storage permissions: $e');
   }
 
   debugPrint('🎨 Starting Document Scanner App...');
