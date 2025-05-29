@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:document_scanner/core/providers/storage_provider.dart';
+import 'package:document_scanner/core/providers/theme_provider.dart';
 import 'package:document_scanner/core/models/document_model.dart';
 import 'package:document_scanner/core/services/pdf_service.dart';
 import 'package:document_scanner/core/services/storage_service.dart';
@@ -29,22 +30,29 @@ class _DocumentDetailPageState extends ConsumerState<DocumentDetailPage> {
   @override
   void initState() {
     super.initState();
+    debugPrint('📄 DocumentDetailPage initialized for document: ${widget.documentId}');
     _loadDocument();
   }
 
   void _loadDocument() {
+    debugPrint('📖 Loading document: ${widget.documentId}');
     final document = ref.read(documentsProvider.notifier).getDocument(widget.documentId);
     setState(() {
       _document = document;
     });
+    debugPrint('📖 Document loaded: ${document?.name ?? 'Not found'}');
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final theme = ref.watch(themeProvider) == ThemeMode.dark ? Theme.of(context).copyWith(brightness: Brightness.dark) : Theme.of(context).copyWith(brightness: Brightness.light);
 
     if (_document == null) {
-      return Scaffold(appBar: AppBar(title: const Text('Document Not Found')), body: const Center(child: Text('Document not found or has been deleted.')));
+      return Scaffold(
+        backgroundColor: theme.colorScheme.surface,
+        appBar: AppBar(title: const Text('Document Not Found'), backgroundColor: theme.appBarTheme.backgroundColor, foregroundColor: theme.appBarTheme.foregroundColor),
+        body: const Center(child: Text('Document not found or has been deleted.')),
+      );
     }
 
     return Scaffold(
@@ -140,36 +148,78 @@ class _DocumentDetailPageState extends ConsumerState<DocumentDetailPage> {
   }
 
   Future<void> _generatePdf() async {
+    debugPrint('📄 Starting PDF generation for document: ${_document!.name}');
     setState(() {
       _isGeneratingPdf = true;
     });
 
     try {
-      debugPrint('📄 Generating PDF for document: ${_document!.name}');
-      debugPrint('📂 Current save location status:');
+      debugPrint('📂 Checking storage location status...');
       final saveStatus = await StorageService.getSaveLocationStatus();
-      debugPrint('   - Location: ${saveStatus['location']}');
-      debugPrint('   - Can write: ${saveStatus['canWrite']}');
-      debugPrint('   - Message: ${saveStatus['message']}');
+      debugPrint('📂 Save location: ${saveStatus['location']}');
+      debugPrint('📂 Can write: ${saveStatus['canWrite']}');
+      debugPrint('📂 Message: ${saveStatus['message']}');
 
       // Check if all images exist before generating PDF
-      debugPrint('🔍 Checking image files before PDF generation:');
+      debugPrint('🔍 Validating image files before PDF generation:');
       for (int i = 0; i < _document!.imagePaths.length; i++) {
         final imagePath = _document!.imagePaths[i];
         final exists = await File(imagePath).exists();
         debugPrint('   Image $i: $imagePath (exists: $exists)');
+        if (!exists) {
+          throw Exception('Image file not found: $imagePath');
+        }
       }
 
-      final pdfData = await PdfService.createPdfFromImages(_document!.imagePaths, _document!.name);
+      debugPrint('📄 Creating PDF from ${_document!.imagePaths.length} images...');
+      final pdfData = await PdfService.createPdfFromImages(
+        _document!.imagePaths,
+        _document!.name,
+      ).timeout(const Duration(minutes: 2), onTimeout: () => throw Exception('PDF generation timed out after 2 minutes'));
 
       final fileName = PdfService.generateFileName(_document!.name);
-      debugPrint('💾 Saving PDF with filename: $fileName');
-      final pdfPath = await StorageService.savePdfFile(pdfData, fileName);
-      debugPrint('✅ PDF saved to: $pdfPath');
+      debugPrint('💾 Generated PDF filename: $fileName');
+      debugPrint('📄 PDF generated successfully, size: ${pdfData.length} bytes');
+
+      // Show user choice for PDF saving with timeout
+      final saveChoice = await _showPdfSaveDialog().timeout(
+        const Duration(minutes: 1),
+        onTimeout: () {
+          debugPrint('⚠️ PDF save dialog timed out, using app storage');
+          return 'app';
+        },
+      );
+
+      String pdfPath;
+      if (saveChoice == 'saf') {
+        // Use SAF to let user choose location
+        debugPrint('💾 User chose SAF for PDF saving');
+        try {
+          pdfPath = await StorageService.savePdfFile(pdfData, fileName).timeout(const Duration(minutes: 2), onTimeout: () => throw Exception('File save operation timed out'));
+        } catch (e) {
+          debugPrint('❌ SAF save failed: $e, falling back to app storage');
+          pdfPath = await StorageService.savePdfFileToAppStorage(pdfData, fileName);
+        }
+      } else {
+        // Save to app storage
+        debugPrint('💾 User chose app storage for PDF saving');
+        pdfPath = await StorageService.savePdfFileToAppStorage(pdfData, fileName);
+      }
+
+      debugPrint('✅ PDF saved successfully to: $pdfPath');
+
+      // Verify the saved file exists
+      final savedFile = File(pdfPath);
+      if (!await savedFile.exists()) {
+        throw Exception('PDF file was not saved properly');
+      }
+
+      final fileSize = await savedFile.length();
+      debugPrint('✅ PDF file verified: $pdfPath (${fileSize} bytes)');
 
       // Get storage location info for display
       final storageDisplayName = StorageService.getStorageLocationDisplayName(pdfPath);
-      debugPrint('📁 Storage location: $storageDisplayName');
+      debugPrint('📁 Storage location display name: $storageDisplayName');
 
       final updatedDocument = _document!.copyWith(pdfPath: pdfPath, storageLocation: storageDisplayName);
       await ref.read(documentsProvider.notifier).updateDocument(updatedDocument);
@@ -179,12 +229,12 @@ class _DocumentDetailPageState extends ConsumerState<DocumentDetailPage> {
       });
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('PDF generated successfully')));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('PDF generated successfully'), backgroundColor: Colors.green));
       }
     } catch (e) {
       debugPrint('❌ Error generating PDF: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to generate PDF: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to generate PDF: $e'), backgroundColor: Colors.red));
       }
     } finally {
       setState(() {
@@ -193,12 +243,38 @@ class _DocumentDetailPageState extends ConsumerState<DocumentDetailPage> {
     }
   }
 
+  Future<String?> _showPdfSaveDialog() async {
+    return showDialog<String>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Save PDF'),
+            content: const Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Choose where to save your PDF:'),
+                SizedBox(height: 12),
+                Text('• Choose Location: Select any folder on your device'),
+                Text('• App Storage: Save to app folder (accessible via file manager)'),
+              ],
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.of(context).pop('app'), child: const Text('App Storage')),
+              ElevatedButton(onPressed: () => Navigator.of(context).pop('saf'), child: const Text('Choose Location')),
+            ],
+          ),
+    );
+  }
+
   Future<void> _uploadToCloud() async {
     if (!OneDriveService.isAuthenticated) {
+      debugPrint('☁️ OneDrive not authenticated, showing dialog');
       _showCloudNotConnectedDialog();
       return;
     }
 
+    debugPrint('☁️ Starting cloud upload for document: ${_document!.name}');
     setState(() {
       _isUploading = true;
     });
@@ -208,23 +284,28 @@ class _DocumentDetailPageState extends ConsumerState<DocumentDetailPage> {
       String fileName;
 
       if (_document!.pdfPath != null && await StorageService.fileExists(_document!.pdfPath!)) {
+        debugPrint('📄 Uploading existing PDF file');
         final pdfFile = File(_document!.pdfPath!);
         dataToUpload = await pdfFile.readAsBytes();
         fileName = '${_document!.name}.pdf';
       } else {
+        debugPrint('📄 Generating PDF for upload');
         final pdfData = await PdfService.createPdfFromImages(_document!.imagePaths, _document!.name);
         dataToUpload = pdfData;
         fileName = '${_document!.name}.pdf';
       }
 
       if (_document!.isEncrypted && _document!.encryptionKeyId != null) {
+        debugPrint('🔒 Encrypting data before upload');
         dataToUpload = await EncryptionService.encryptData(dataToUpload, _document!.encryptionKeyId!);
         fileName = '$fileName.encrypted';
       }
 
+      debugPrint('☁️ Uploading to OneDrive: $fileName (${dataToUpload.length} bytes)');
       final cloudUrl = await OneDriveService.uploadFile(dataToUpload, fileName);
 
       if (cloudUrl != null) {
+        debugPrint('✅ Upload successful: $cloudUrl');
         final updatedDocument = _document!.copyWith(isUploaded: true, cloudUrl: cloudUrl);
         await ref.read(documentsProvider.notifier).updateDocument(updatedDocument);
 
@@ -233,14 +314,15 @@ class _DocumentDetailPageState extends ConsumerState<DocumentDetailPage> {
         });
 
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Document uploaded to OneDrive')));
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Document uploaded to OneDrive'), backgroundColor: Colors.green));
         }
       } else {
-        throw Exception('Upload failed');
+        throw Exception('Upload failed - no URL returned');
       }
     } catch (e) {
+      debugPrint('❌ Upload failed: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Upload failed: $e'), backgroundColor: Colors.red));
       }
     } finally {
       setState(() {
@@ -251,17 +333,21 @@ class _DocumentDetailPageState extends ConsumerState<DocumentDetailPage> {
 
   void _previewPdf() {
     if (_document!.pdfPath != null) {
+      debugPrint('👁️ Opening PDF preview for: ${_document!.pdfPath}');
       context.push('/pdf-preview/${_document!.id}');
     } else {
+      debugPrint('⚠️ No PDF available for preview');
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please generate PDF first')));
     }
   }
 
   void _showImageViewer(int initialIndex) {
+    debugPrint('🖼️ Opening image viewer at index: $initialIndex');
     Navigator.of(context).push(MaterialPageRoute(builder: (context) => _ImageViewerPage(imagePaths: _document!.imagePaths, initialIndex: initialIndex)));
   }
 
   Future<void> _reorderImages(int oldIndex, int newIndex) async {
+    debugPrint('🔄 Reordering images: $oldIndex -> $newIndex');
     final imagePaths = List<String>.from(_document!.imagePaths);
     if (newIndex > oldIndex) {
       newIndex--;
@@ -275,9 +361,11 @@ class _DocumentDetailPageState extends ConsumerState<DocumentDetailPage> {
     setState(() {
       _document = updatedDocument;
     });
+    debugPrint('✅ Images reordered successfully');
   }
 
   void _handleMenuAction(String action) {
+    debugPrint('🔧 Handling menu action: $action');
     switch (action) {
       case 'rename':
         _showRenameDialog();
@@ -306,6 +394,7 @@ class _DocumentDetailPageState extends ConsumerState<DocumentDetailPage> {
                 onPressed: () async {
                   final newName = controller.text.trim();
                   if (newName.isNotEmpty && newName != _document!.name) {
+                    debugPrint('✏️ Renaming document to: $newName');
                     final updatedDocument = _document!.copyWith(name: newName);
                     await ref.read(documentsProvider.notifier).updateDocument(updatedDocument);
                     setState(() {
@@ -322,6 +411,7 @@ class _DocumentDetailPageState extends ConsumerState<DocumentDetailPage> {
   }
 
   void _shareDocument() {
+    debugPrint('📤 Share document feature requested');
     // TODO: Implement sharing functionality
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Sharing feature coming soon')));
   }
@@ -337,6 +427,7 @@ class _DocumentDetailPageState extends ConsumerState<DocumentDetailPage> {
               TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
               TextButton(
                 onPressed: () async {
+                  debugPrint('🗑️ Deleting document: ${_document!.id}');
                   await ref.read(documentsProvider.notifier).deleteDocument(_document!.id);
                   if (context.mounted) {
                     Navigator.of(context).pop();
@@ -395,6 +486,7 @@ class _ImageViewerPageState extends State<_ImageViewerPage> {
     super.initState();
     _currentIndex = widget.initialIndex;
     _pageController = PageController(initialPage: widget.initialIndex);
+    debugPrint('🖼️ ImageViewer initialized at index: $_currentIndex');
   }
 
   @override
@@ -411,7 +503,10 @@ class _ImageViewerPageState extends State<_ImageViewerPage> {
       body: PageView.builder(
         controller: _pageController,
         itemCount: widget.imagePaths.length,
-        onPageChanged: (index) => setState(() => _currentIndex = index),
+        onPageChanged: (index) {
+          debugPrint('🖼️ Image viewer page changed to: $index');
+          setState(() => _currentIndex = index);
+        },
         itemBuilder: (context, index) {
           return InteractiveViewer(
             child: Center(
@@ -419,6 +514,7 @@ class _ImageViewerPageState extends State<_ImageViewerPage> {
                 File(widget.imagePaths[index]),
                 fit: BoxFit.contain,
                 errorBuilder: (context, error, stackTrace) {
+                  debugPrint('❌ Error loading image in viewer: $error');
                   return const Center(child: Icon(Icons.broken_image, color: Colors.white, size: 64));
                 },
               ),
