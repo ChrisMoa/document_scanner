@@ -176,7 +176,8 @@ class _EnhancedCameraPageState extends ConsumerState<EnhancedCameraPage> {
       // Create document model with both images and PDF
       final document = DocumentModel(
         id: const Uuid().v4(),
-        name: 'Scanned Document ${DateTime.now().day}/${DateTime.now().month}/${DateTime.now().year}',
+        name:
+            'Scanned_Document_${DateTime.now().day}_${DateTime.now().month}_${DateTime.now().year}_${DateTime.now().hour.toString().padLeft(2, '0')}_${DateTime.now().minute.toString().padLeft(2, '0')}',
         imagePaths: imagePaths, // Include all the image paths
         pdfPath: pdfPath,
         createdAt: DateTime.now(),

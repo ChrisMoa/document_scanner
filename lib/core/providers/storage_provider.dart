@@ -123,6 +123,12 @@ class DocumentsNotifier extends StateNotifier<List<DocumentModel>> {
     debugPrint('🔒 Found ${encrypted.length} encrypted documents');
     return encrypted;
   }
+
+  List<DocumentModel> getDownloadedDocuments() {
+    final downloaded = state.where((doc) => doc.isDownloaded).toList();
+    debugPrint('📥 Found ${downloaded.length} downloaded documents');
+    return downloaded;
+  }
 }
 
 class ScanSessionsNotifier extends StateNotifier<List<ScanSessionModel>> {

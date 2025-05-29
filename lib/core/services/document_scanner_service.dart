@@ -10,7 +10,6 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:image/image.dart' as img;
 import 'package:document_scanner/core/models/document_model.dart';
-import 'package:document_scanner/core/services/storage_service.dart';
 import 'package:path/path.dart';
 
 /// Service for document scanning using cunning_document_scanner
@@ -38,14 +37,7 @@ class DocumentScannerService {
         debugPrint('$_tag: Cunning scanner result: ${scannedImages?.length ?? 0} images captured');
       } catch (e) {
         debugPrint('$_tag: Cunning scanner failed: $e');
-
-        // Fallback to regular camera capture for single image
-        final imageFile = await _imagePicker.pickImage(source: ImageSource.camera, preferredCameraDevice: CameraDevice.rear, imageQuality: 100);
-
-        if (imageFile != null) {
-          scannedImages = [imageFile.path];
-          debugPrint('$_tag: Camera fallback successful');
-        }
+        throw DocumentScannerException('Document scanner failed: $e. Please ensure camera permissions are granted and try again.');
       }
 
       if (scannedImages != null && scannedImages.isNotEmpty) {
@@ -88,14 +80,7 @@ class DocumentScannerService {
         debugPrint('$_tag: Cunning scanner result: $scannedImages');
       } catch (e) {
         debugPrint('$_tag: Cunning scanner failed: $e');
-
-        // Fallback to regular camera capture
-        final imageFile = await _imagePicker.pickImage(source: ImageSource.camera, preferredCameraDevice: CameraDevice.rear, imageQuality: 100);
-
-        if (imageFile != null) {
-          scannedImages = [imageFile.path];
-          debugPrint('$_tag: Camera fallback successful');
-        }
+        throw DocumentScannerException('Document scanner failed: $e. Please ensure camera permissions are granted and try again.');
       }
 
       if (scannedImages != null && scannedImages.isNotEmpty) {
@@ -133,16 +118,7 @@ class DocumentScannerService {
         }
       } catch (e) {
         debugPrint('$_tag: Cunning scanner failed: $e');
-
-        // Fallback to camera capture for single image
-        final imageFile = await _imagePicker.pickImage(source: ImageSource.camera, preferredCameraDevice: CameraDevice.rear, imageQuality: 100);
-
-        if (imageFile != null) {
-          final processedPath = await _processAndSaveImage(imageFile.path, 0);
-          if (processedPath != null) {
-            allImagePaths.add(processedPath);
-          }
-        }
+        throw DocumentScannerException('Document scanner failed: $e. Please ensure camera permissions are granted and try again.');
       }
 
       debugPrint('$_tag: Successfully processed ${allImagePaths.length} images');
@@ -207,7 +183,7 @@ class DocumentScannerService {
       } catch (e) {
         debugPrint('$_tag: Cunning scanner gallery failed: $e');
 
-        // Fallback to regular gallery selection
+        // Fallback to regular gallery selection for gallery import
         final imageFile = await _imagePicker.pickImage(source: ImageSource.gallery, imageQuality: 100);
 
         if (imageFile != null) {
@@ -254,7 +230,8 @@ class DocumentScannerService {
       // Create document model
       final document = DocumentModel(
         id: 'scan_${DateTime.now().millisecondsSinceEpoch}_$index',
-        name: 'Scanned Document ${index + 1}',
+        name:
+            'Scanned_Document_${index + 1}_${DateTime.now().day}_${DateTime.now().month}_${DateTime.now().year}_${DateTime.now().hour.toString().padLeft(2, '0')}_${DateTime.now().minute.toString().padLeft(2, '0')}',
         imagePaths: [processedImagePath],
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),

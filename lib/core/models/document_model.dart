@@ -37,6 +37,9 @@ class DocumentModel extends HiveObject {
   @HiveField(10)
   String? storageLocation;
 
+  @HiveField(11)
+  bool isDownloaded;
+
   DocumentModel({
     required this.id,
     required this.name,
@@ -49,6 +52,7 @@ class DocumentModel extends HiveObject {
     this.isEncrypted = false,
     this.encryptionKeyId,
     this.storageLocation,
+    this.isDownloaded = false,
   });
 
   DocumentModel copyWith({
@@ -63,6 +67,7 @@ class DocumentModel extends HiveObject {
     bool? isEncrypted,
     String? encryptionKeyId,
     String? storageLocation,
+    bool? isDownloaded,
   }) {
     return DocumentModel(
       id: id ?? this.id,
@@ -76,6 +81,7 @@ class DocumentModel extends HiveObject {
       isEncrypted: isEncrypted ?? this.isEncrypted,
       encryptionKeyId: encryptionKeyId ?? this.encryptionKeyId,
       storageLocation: storageLocation ?? this.storageLocation,
+      isDownloaded: isDownloaded ?? this.isDownloaded,
     );
   }
 
@@ -92,6 +98,7 @@ class DocumentModel extends HiveObject {
       'isEncrypted': isEncrypted,
       'encryptionKeyId': encryptionKeyId,
       'storageLocation': storageLocation,
+      'isDownloaded': isDownloaded,
     };
   }
 
@@ -108,6 +115,7 @@ class DocumentModel extends HiveObject {
       isEncrypted: json['isEncrypted'] ?? false,
       encryptionKeyId: json['encryptionKeyId'],
       storageLocation: json['storageLocation'],
+      isDownloaded: json['isDownloaded'] ?? false,
     );
   }
 }
