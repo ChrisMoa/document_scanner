@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:document_scanner/features/home/presentation/pages/home_page.dart';
 import 'package:document_scanner/features/camera/presentation/pages/camera_page.dart';
+import 'package:document_scanner/features/camera/presentation/pages/document_crop_page.dart';
 import 'package:document_scanner/features/document/presentation/pages/document_detail_page.dart';
 import 'package:document_scanner/features/document/presentation/pages/pdf_preview_page.dart';
 import 'package:document_scanner/features/settings/presentation/pages/settings_page.dart';
@@ -14,6 +15,23 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     routes: [
       GoRoute(path: '/', name: 'home', builder: (context, state) => const HomePage()),
       GoRoute(path: '/camera', name: 'camera', builder: (context, state) => const CameraPage()),
+      GoRoute(
+        path: '/document-crop',
+        name: 'document-crop',
+        builder: (context, state) {
+          final extra = state.extra as Map<String, dynamic>?;
+          if (extra == null) {
+            return const Scaffold(body: Center(child: Text('Invalid document crop parameters')));
+          }
+
+          return DocumentCropPage(
+            imagePath: extra['imagePath'] as String,
+            initialCorners: extra['initialCorners'] as List<Offset>?,
+            imageWidth: extra['imageWidth'] as int,
+            imageHeight: extra['imageHeight'] as int,
+          );
+        },
+      ),
       GoRoute(
         path: '/document/:id',
         name: 'document-detail',

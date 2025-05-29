@@ -137,24 +137,44 @@ class _CameraPageState extends ConsumerState<CameraPage> with WidgetsBindingObse
       debugPrint('🔄 Processing captured image: $originalPath');
 
       try {
-        // Try OpenCV document detection and cropping
-        debugPrint('🔍 Attempting OpenCV document detection...');
-        final processedData = await OpenCVService().detectAndCropDocument(file);
-        if (processedData != null && await processedData.exists()) {
-          final fileName = 'scan_${DateTime.now().millisecondsSinceEpoch}.png';
-          debugPrint('✅ OpenCV processing successful, saving processed image...');
+        // Try OpenCV document corner detection
+        debugPrint('🔍 Attempting OpenCV document corner detection...');
+        final documentCorners = await OpenCVService().detectDocumentCorners(file);
 
-          // Save to user's preferred location automatically
-          final processedPath = await StorageService.saveImageFile(await processedData.readAsBytes(), fileName);
+        if (documentCorners != null) {
+          debugPrint('✅ Document corners detected successfully');
 
-          // Clean up temporary files
-          await file.delete();
-          await processedData.delete();
+          // Navigate to manual adjustment page
+          if (context.mounted) {
+            final croppedImagePath = await context.push<String>(
+              '/document-crop',
+              extra: {'imagePath': originalPath, 'initialCorners': documentCorners.corners, 'imageWidth': documentCorners.imageWidth, 'imageHeight': documentCorners.imageHeight},
+            );
 
-          debugPrint('✅ Processed image saved to: $processedPath');
-          return processedPath;
+            if (croppedImagePath != null) {
+              final fileName = 'scan_${DateTime.now().millisecondsSinceEpoch}.png';
+              debugPrint('✅ Manual adjustment completed, saving processed image...');
+
+              // Read the cropped file and save to user's preferred location
+              final croppedFile = File(croppedImagePath);
+              final croppedBytes = await croppedFile.readAsBytes();
+              final processedPath = await StorageService.saveImageFile(croppedBytes, fileName);
+
+              // Clean up temporary files
+              await file.delete();
+              await croppedFile.delete();
+
+              debugPrint('✅ Processed image saved to: $processedPath');
+              return processedPath;
+            } else {
+              // User cancelled the manual adjustment
+              debugPrint('⚠️ User cancelled manual adjustment');
+              await file.delete();
+              return null;
+            }
+          }
         } else {
-          debugPrint('⚠️ OpenCV processing returned null, using original image');
+          debugPrint('⚠️ Document corner detection failed, using original image');
         }
       } catch (openCvError) {
         debugPrint('⚠️ OpenCV processing failed: $openCvError');
