@@ -14,18 +14,37 @@ class PdfService {
       debugPrint('  Image $i: ${imagePaths[i]}');
     }
 
+    if (imagePaths.isEmpty) {
+      debugPrint('⚠️ No image paths provided, creating empty PDF');
+      throw Exception('No images provided for PDF creation');
+    }
+
     int imagesAdded = 0;
-    for (final imagePath in imagePaths) {
+    List<String> failedImages = [];
+
+    for (int i = 0; i < imagePaths.length; i++) {
+      final imagePath = imagePaths[i];
       try {
         final imageFile = File(imagePath);
         final exists = await imageFile.exists();
-        debugPrint('🔍 Checking image: $imagePath - exists: $exists');
+        debugPrint('🔍 Checking image $i: $imagePath - exists: $exists');
 
         if (exists) {
           final imageBytes = await imageFile.readAsBytes();
+
+          // Validate image size
+          if (imageBytes.isEmpty) {
+            debugPrint('❌ Image file is empty: $imagePath');
+            failedImages.add(imagePath);
+            continue;
+          }
+
+          // Try to decode the image to ensure it's valid
           final image = img.decodeImage(imageBytes);
 
           if (image != null) {
+            debugPrint('✅ Image decoded successfully: ${image.width}x${image.height}');
+
             final pdfImage = pw.MemoryImage(imageBytes);
 
             pdf.addPage(
@@ -38,22 +57,29 @@ class PdfService {
               ),
             );
             imagesAdded++;
-            debugPrint('✅ Added image to PDF: $imagePath');
+            debugPrint('✅ Added image $i to PDF: $imagePath');
           } else {
-            debugPrint('❌ Failed to decode image: $imagePath');
+            debugPrint('❌ Failed to decode image $i: $imagePath');
+            failedImages.add(imagePath);
           }
         } else {
-          debugPrint('❌ Image file not found: $imagePath');
+          debugPrint('❌ Image file not found $i: $imagePath');
+          failedImages.add(imagePath);
         }
       } catch (e) {
-        debugPrint('❌ Error adding image to PDF: $imagePath - $e');
+        debugPrint('❌ Error processing image $i: $imagePath - $e');
+        failedImages.add(imagePath);
       }
     }
 
     debugPrint('📊 PDF creation summary: ${imagesAdded}/${imagePaths.length} images added successfully');
 
+    if (failedImages.isNotEmpty) {
+      debugPrint('⚠️ Failed to process ${failedImages.length} images: ${failedImages.join(', ')}');
+    }
+
     if (pdf.document.pdfPageList.pages.isEmpty) {
-      debugPrint('⚠️ No valid images found, creating placeholder PDF');
+      debugPrint('⚠️ No valid images found, creating error PDF');
       pdf.addPage(
         pw.Page(
           build: (pw.Context context) {
@@ -61,11 +87,17 @@ class PdfService {
               child: pw.Column(
                 mainAxisAlignment: pw.MainAxisAlignment.center,
                 children: [
-                  pw.Text('No images found', style: const pw.TextStyle(fontSize: 24)),
+                  pw.Text('No Valid Images Found', style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold)),
                   pw.SizedBox(height: 20),
-                  pw.Text('The following image paths were checked:', style: const pw.TextStyle(fontSize: 12)),
-                  pw.SizedBox(height: 10),
-                  ...imagePaths.map((path) => pw.Text(path, style: const pw.TextStyle(fontSize: 8))),
+                  pw.Text('Total images attempted: ${imagePaths.length}', style: const pw.TextStyle(fontSize: 12)),
+                  pw.Text('Successfully processed: $imagesAdded', style: const pw.TextStyle(fontSize: 12)),
+                  pw.Text('Failed to process: ${failedImages.length}', style: const pw.TextStyle(fontSize: 12)),
+                  if (failedImages.isNotEmpty) ...[
+                    pw.SizedBox(height: 10),
+                    pw.Text('Failed image paths:', style: const pw.TextStyle(fontSize: 10)),
+                    ...failedImages.take(5).map((path) => pw.Text(path, style: const pw.TextStyle(fontSize: 8))),
+                    if (failedImages.length > 5) pw.Text('... and ${failedImages.length - 5} more', style: const pw.TextStyle(fontSize: 8)),
+                  ],
                 ],
               ),
             );
@@ -74,7 +106,11 @@ class PdfService {
       );
     }
 
-    return await pdf.save();
+    debugPrint('📄 Saving PDF document...');
+    final pdfBytes = await pdf.save();
+    debugPrint('✅ PDF created successfully, size: ${pdfBytes.length} bytes');
+
+    return pdfBytes;
   }
 
   static Future<Uint8List> createPdfFromImageData(List<Uint8List> imageDataList, String title) async {

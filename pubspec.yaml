@@ -52,6 +52,7 @@ dependencies:
   # Utils
   path: ^1.8.3
   uuid: ^4.2.1
+  device_info_plus: ^11.4.0
 
 dev_dependencies:
   flutter_test:

@@ -14,12 +14,16 @@ class StorageService {
   static late Box<String> _settingsBox;
 
   static Future<void> initialize() async {
+    debugPrint('🔧 Initializing StorageService...');
+
     Hive.registerAdapter(DocumentModelAdapter());
     Hive.registerAdapter(ScanSessionModelAdapter());
 
     _documentsBox = await Hive.openBox<DocumentModel>('documents');
     _scanSessionsBox = await Hive.openBox<ScanSessionModel>('scan_sessions');
     _settingsBox = await Hive.openBox<String>('settings');
+
+    debugPrint('✅ StorageService initialized successfully');
   }
 
   static Box<DocumentModel> get documentsBox => _documentsBox;
@@ -28,22 +32,29 @@ class StorageService {
 
   static Future<String> getDefaultSaveLocation() async {
     final directory = await getApplicationDocumentsDirectory();
-    return '${directory.path}/DocumentScanner';
+    final defaultPath = '${directory.path}/DocumentScanner';
+    debugPrint('📁 Default save location: $defaultPath');
+    return defaultPath;
   }
 
   /// Get the external storage directory for the app (works on Android 11+)
   static Future<String?> getExternalAppDirectory() async {
     try {
       final directory = await getExternalStorageDirectory();
-      return directory?.path;
+      if (directory != null) {
+        debugPrint('📱 External app directory: ${directory.path}');
+        return directory.path;
+      }
     } catch (e) {
       debugPrint('❌ Error getting external storage directory: $e');
-      return null;
     }
+    return null;
   }
 
   static String? getSaveLocation() {
-    return _settingsBox.get('save_location');
+    final location = _settingsBox.get('save_location');
+    debugPrint('🔍 User save location: $location');
+    return location;
   }
 
   static String? getSaveLocationUri() {
@@ -52,12 +63,12 @@ class StorageService {
 
   static Future<void> setSaveLocation(String path) async {
     await _settingsBox.put('save_location', path);
-    debugPrint('📁 Save location set to: $path');
+    debugPrint('💾 Save location set to: $path');
   }
 
   static Future<void> setSaveLocationUri(String uri) async {
     await _settingsBox.put('save_location_uri', uri);
-    debugPrint('📁 Save location URI set to: $uri');
+    debugPrint('💾 Save location URI set to: $uri');
   }
 
   /// Request user to select a directory - ONLY used in settings
@@ -89,28 +100,47 @@ class StorageService {
     }
   }
 
-  /// Get the actual save directory to use
+  /// Get the actual save directory to use for saving files (images only)
   static Future<String> _getActualSaveDirectory() async {
-    final userLocation = getSaveLocation();
-
-    if (userLocation != null) {
-      // Try to use external app storage with user's folder name
-      final externalDir = await getExternalStorageDirectory();
-      if (externalDir != null) {
-        final userFolderName = path.basename(userLocation);
-        final targetDir = path.join(externalDir.path, userFolderName);
-        debugPrint('🎯 Using external app storage: $targetDir');
+    // Always try to use external app storage first for better user experience
+    final externalDir = await getExternalAppDirectory();
+    if (externalDir != null) {
+      final userLocation = getSaveLocation();
+      if (userLocation != null) {
+        // Create a subfolder in external app storage with user's preferred name
+        final folderName = path.basename(userLocation);
+        final targetDir = path.join(externalDir, folderName);
+        debugPrint('🎯 Using external app storage with user folder name: $targetDir');
+        return targetDir;
+      } else {
+        // Use default DocumentScanner folder in external app storage
+        final targetDir = path.join(externalDir, 'DocumentScanner');
+        debugPrint('🎯 Using default external app storage: $targetDir');
         return targetDir;
       }
     }
 
-    // Fallback to default internal storage
-    return await getDefaultSaveLocation();
+    // Fallback to internal storage
+    final userLocation = getSaveLocation();
+    if (userLocation != null) {
+      final folderName = path.basename(userLocation);
+      final defaultDir = await getDefaultSaveLocation();
+      final targetDir = path.join(path.dirname(defaultDir), folderName);
+      debugPrint('🎯 Using internal storage with user folder name: $targetDir');
+      return targetDir;
+    }
+
+    // Final fallback to default internal storage
+    final defaultDir = await getDefaultSaveLocation();
+    debugPrint('🎯 Using default internal storage: $defaultDir');
+    return defaultDir;
   }
 
   static Future<String> saveImageFile(Uint8List imageData, String fileName) async {
     try {
-      // Get the target directory
+      debugPrint('💾 Saving image file: $fileName');
+
+      // Get the target directory (always app storage for images)
       final saveDir = await _getActualSaveDirectory();
       await ensureDirectoryExists(saveDir);
 
@@ -119,11 +149,12 @@ class StorageService {
       final file = File(filePath);
       await file.writeAsBytes(imageData);
 
-      debugPrint('✅ Image saved to: $filePath');
+      debugPrint('✅ Image saved successfully to: $filePath');
 
       // Verify file exists
       if (await file.exists()) {
-        debugPrint('✅ Image file verified: ${file.path}');
+        final fileSize = await file.length();
+        debugPrint('✅ Image file verified: ${file.path} (${fileSize} bytes)');
         return file.path;
       } else {
         throw Exception('File was not created successfully');
@@ -132,18 +163,72 @@ class StorageService {
       debugPrint('❌ Error saving image: $e');
 
       // Fallback to internal storage
-      final defaultDir = await getDefaultSaveLocation();
-      await ensureDirectoryExists(defaultDir);
-      final filePath = path.join(defaultDir, fileName);
-      final file = File(filePath);
-      await file.writeAsBytes(imageData);
-      debugPrint('📱 Image saved to internal storage fallback: $filePath');
-      return file.path;
+      try {
+        final defaultDir = await getDefaultSaveLocation();
+        await ensureDirectoryExists(defaultDir);
+        final filePath = path.join(defaultDir, fileName);
+        final file = File(filePath);
+        await file.writeAsBytes(imageData);
+        debugPrint('📱 Image saved to internal storage fallback: $filePath');
+        return file.path;
+      } catch (fallbackError) {
+        debugPrint('❌ Fallback save also failed: $fallbackError');
+        rethrow;
+      }
     }
   }
 
+  /// Save PDF file using SAF with user confirmation
   static Future<String> savePdfFile(Uint8List pdfData, String fileName) async {
     try {
+      debugPrint('💾 Saving PDF file with SAF: $fileName');
+
+      // Use SAF to let user choose where to save the PDF with timeout
+      final result = await FilePicker.platform
+          .saveFile(dialogTitle: 'Save PDF Document', fileName: fileName, type: FileType.custom, allowedExtensions: ['pdf'], bytes: pdfData)
+          .timeout(
+            const Duration(minutes: 3),
+            onTimeout: () {
+              debugPrint('⚠️ FilePicker.saveFile timed out after 3 minutes');
+              return null;
+            },
+          );
+
+      if (result != null) {
+        debugPrint('✅ PDF saved via SAF to: $result');
+
+        // Verify the file was actually saved
+        try {
+          final savedFile = File(result);
+          if (await savedFile.exists()) {
+            final fileSize = await savedFile.length();
+            debugPrint('✅ SAF file verified: $result (${fileSize} bytes)');
+            return result;
+          } else {
+            debugPrint('⚠️ SAF file not found after save, falling back to app storage');
+            throw Exception('SAF saved file not found');
+          }
+        } catch (e) {
+          debugPrint('⚠️ Error verifying SAF file: $e, falling back to app storage');
+          throw Exception('SAF file verification failed: $e');
+        }
+      } else {
+        // User cancelled or timed out, fall back to app storage
+        debugPrint('⚠️ User cancelled SAF or operation timed out, falling back to app storage');
+        return await _savePdfToAppStorage(pdfData, fileName);
+      }
+    } catch (e) {
+      debugPrint('❌ Error saving PDF via SAF: $e');
+      // Fall back to app storage
+      return await _savePdfToAppStorage(pdfData, fileName);
+    }
+  }
+
+  /// Fallback method to save PDF to app storage
+  static Future<String> _savePdfToAppStorage(Uint8List pdfData, String fileName) async {
+    try {
+      debugPrint('📱 Saving PDF to app storage: $fileName');
+
       // Get the target directory
       final saveDir = await _getActualSaveDirectory();
       await ensureDirectoryExists(saveDir);
@@ -153,27 +238,38 @@ class StorageService {
       final file = File(filePath);
       await file.writeAsBytes(pdfData);
 
-      debugPrint('✅ PDF saved to: $filePath');
+      debugPrint('✅ PDF saved to app storage: $filePath');
 
       // Verify file exists
       if (await file.exists()) {
-        debugPrint('✅ PDF file verified: ${file.path}');
+        final fileSize = await file.length();
+        debugPrint('✅ PDF file verified: ${file.path} (${fileSize} bytes)');
         return file.path;
       } else {
-        throw Exception('File was not created successfully');
+        throw Exception('PDF file was not created successfully');
       }
     } catch (e) {
-      debugPrint('❌ Error saving PDF: $e');
+      debugPrint('❌ Error saving PDF to app storage: $e');
 
-      // Fallback to internal storage
-      final defaultDir = await getDefaultSaveLocation();
-      await ensureDirectoryExists(defaultDir);
-      final filePath = path.join(defaultDir, fileName);
-      final file = File(filePath);
-      await file.writeAsBytes(pdfData);
-      debugPrint('📱 PDF saved to internal storage fallback: $filePath');
-      return file.path;
+      // Final fallback to internal storage
+      try {
+        final defaultDir = await getDefaultSaveLocation();
+        await ensureDirectoryExists(defaultDir);
+        final filePath = path.join(defaultDir, fileName);
+        final file = File(filePath);
+        await file.writeAsBytes(pdfData);
+        debugPrint('📱 PDF saved to internal storage final fallback: $filePath');
+        return file.path;
+      } catch (fallbackError) {
+        debugPrint('❌ Final fallback PDF save also failed: $fallbackError');
+        rethrow;
+      }
     }
+  }
+
+  /// Save PDF file directly to app storage (for when user doesn't want SAF)
+  static Future<String> savePdfFileToAppStorage(Uint8List pdfData, String fileName) async {
+    return await _savePdfToAppStorage(pdfData, fileName);
   }
 
   static Future<void> deleteFile(String filePath) async {
@@ -182,6 +278,8 @@ class StorageService {
       if (await file.exists()) {
         await file.delete();
         debugPrint('🗑️ File deleted: $filePath');
+      } else {
+        debugPrint('⚠️ File not found for deletion: $filePath');
       }
     } catch (e) {
       debugPrint('❌ Error deleting file: $e');
@@ -190,61 +288,113 @@ class StorageService {
 
   static Future<bool> fileExists(String filePath) async {
     try {
-      return await File(filePath).exists();
+      final exists = await File(filePath).exists();
+      debugPrint('🔍 File exists check for $filePath: $exists');
+      return exists;
     } catch (e) {
       debugPrint('❌ Error checking file existence: $e');
       return false;
     }
   }
 
-  /// Get the folder name where files are actually saved
+  /// Get the folder name where files are actually saved for display purposes
   static String getStorageLocationDisplayName(String filePath) {
     try {
       final userLocation = getSaveLocation();
 
       // If user has set a custom location, show that folder name
       if (userLocation != null) {
-        return path.basename(userLocation);
+        final folderName = path.basename(userLocation);
+        debugPrint('📂 Display name for user location: $folderName');
+        return folderName;
+      }
+
+      // Check if it's external app storage
+      if (filePath.contains('/Android/data/') && filePath.contains('/files/')) {
+        debugPrint('📂 Display name: External App Storage');
+        return 'External App Storage';
       }
 
       // Check if it's internal storage
       if (filePath.contains('app_flutter') || filePath.contains('DocumentScanner')) {
-        return 'App Internal Storage';
+        debugPrint('📂 Display name: Internal App Storage');
+        return 'Internal App Storage';
       }
 
-      // For external storage, try to extract folder name
+      // For SAF saved files (user chosen location)
+      if (filePath.startsWith('/storage/emulated/0/') && !filePath.contains('/Android/data/')) {
+        debugPrint('📂 Display name: User Selected Location');
+        return 'User Selected Location';
+      }
+
+      // For other paths, try to extract folder name
       final directory = File(filePath).parent;
       final dirPath = directory.path;
       final parts = dirPath.split('/');
-      return parts.isNotEmpty ? parts.last : 'Storage';
+      final displayName = parts.isNotEmpty ? parts.last : 'App Storage';
+      debugPrint('📂 Display name for path $filePath: $displayName');
+      return displayName;
     } catch (e) {
+      debugPrint('❌ Error getting display name: $e');
       return 'App Storage';
     }
   }
 
   /// Test the current save location and provide detailed status
   static Future<Map<String, dynamic>> getSaveLocationStatus() async {
+    debugPrint('📊 Getting save location status...');
+
     final userLocation = getSaveLocation();
     final actualDir = await _getActualSaveDirectory();
 
+    // Check if external app storage is available
+    final externalDir = await getExternalAppDirectory();
+    final hasExternalStorage = externalDir != null;
+
     if (userLocation == null) {
-      return {'isDefault': true, 'location': actualDir, 'displayLocation': 'App Internal Storage', 'canWrite': true, 'message': 'Using default app storage'};
+      return {
+        'isDefault': true,
+        'location': actualDir,
+        'displayLocation': hasExternalStorage ? 'External App Storage (Default)' : 'Internal App Storage (Default)',
+        'canWrite': true,
+        'message': hasExternalStorage ? 'Images: External app storage, PDFs: User choice via file picker' : 'Images: Internal app storage, PDFs: User choice via file picker',
+        'pdfSaveMethod': 'SAF (Storage Access Framework)',
+      };
     }
 
     // Test if we can write to the actual directory
     final canWrite = await _testDirectWrite(actualDir);
 
-    return {
+    // Get user-friendly location description
+    String displayLocation;
+    String message;
+
+    if (hasExternalStorage) {
+      displayLocation = '${path.basename(userLocation)} (External)';
+      message = 'Images: External app storage, PDFs: User choice via file picker';
+    } else {
+      displayLocation = '${path.basename(userLocation)} (Internal)';
+      message = 'Images: Internal app storage, PDFs: User choice via file picker';
+    }
+
+    final status = {
       'isDefault': false,
       'location': actualDir,
-      'displayLocation': path.basename(userLocation),
+      'displayLocation': displayLocation,
       'canWrite': canWrite,
-      'message': canWrite ? 'Saving to user-selected location' : 'Using app storage (external access limited)',
+      'message': message,
+      'hasExternalStorage': hasExternalStorage,
+      'pdfSaveMethod': 'SAF (Storage Access Framework)',
     };
+
+    debugPrint('📊 Save location status: $status');
+    return status;
   }
 
   static Future<bool> _testDirectWrite(String dirPath) async {
     try {
+      debugPrint('🧪 Testing write access to: $dirPath');
+
       await ensureDirectoryExists(dirPath);
 
       // Try to create a test file
@@ -253,12 +403,13 @@ class StorageService {
 
       if (await testFile.exists()) {
         await testFile.delete();
-        debugPrint('✅ Direct write test successful: $dirPath');
+        debugPrint('✅ Write test successful for: $dirPath');
         return true;
       }
+      debugPrint('❌ Write test failed - file not created: $dirPath');
       return false;
     } catch (e) {
-      debugPrint('❌ Direct write test failed: $dirPath - $e');
+      debugPrint('❌ Write test failed for $dirPath: $e');
       return false;
     }
   }
