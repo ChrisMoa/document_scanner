@@ -10,6 +10,7 @@ import 'package:document_scanner/core/services/pdf_service.dart';
 import 'package:document_scanner/core/services/storage_service.dart';
 import 'package:document_scanner/core/services/onedrive_service.dart';
 import 'package:document_scanner/core/services/encryption_service.dart';
+import 'package:document_scanner/core/services/document_scanner_service.dart';
 import 'package:document_scanner/features/document/presentation/widgets/image_grid_view.dart';
 import 'package:document_scanner/features/document/presentation/widgets/document_actions.dart';
 
@@ -26,6 +27,7 @@ class _DocumentDetailPageState extends ConsumerState<DocumentDetailPage> {
   DocumentModel? _document;
   bool _isGeneratingPdf = false;
   bool _isUploading = false;
+  bool _isAddingPages = false;
   Map<String, dynamic>? _pdfInfo;
 
   @override
@@ -192,8 +194,10 @@ class _DocumentDetailPageState extends ConsumerState<DocumentDetailPage> {
                   onGeneratePdf: _generatePdf,
                   onUploadToCloud: _uploadToCloud,
                   onPreviewPdf: _previewPdf,
+                  onAddPages: _addPages,
                   isGeneratingPdf: _isGeneratingPdf,
                   isUploading: _isUploading,
+                  isAddingPages: _isAddingPages,
                 ),
               ],
             ),
@@ -452,7 +456,66 @@ class _DocumentDetailPageState extends ConsumerState<DocumentDetailPage> {
     }
   }
 
-  void _previewPdf() {
+  Future<void> _addPages() async {
+    debugPrint('📄 Starting add pages for document: ${_document!.name}');
+    setState(() {
+      _isAddingPages = true;
+    });
+
+    try {
+      // Use DocumentScannerService to add pages to existing document
+      final updatedDocument = await DocumentScannerService.addPagesToDocument(_document!, maxNewPages: 5);
+
+      if (updatedDocument != null) {
+        debugPrint('✅ Successfully added pages to document');
+
+        // Update the document in storage
+        await ref.read(documentsProvider.notifier).updateDocument(updatedDocument);
+
+        setState(() {
+          _document = updatedDocument;
+        });
+
+        // Re-analyze the new PDF if it exists
+        if (updatedDocument.pdfPath != null) {
+          await _analyzePdfFile(updatedDocument.pdfPath!);
+        }
+
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('Added pages successfully! Total pages: ${updatedDocument.imagePaths.length}'), backgroundColor: Colors.green, duration: const Duration(seconds: 2)));
+        }
+      } else {
+        debugPrint('⚠️ No new pages were added');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No new pages were scanned'), backgroundColor: Colors.orange, duration: Duration(seconds: 2)));
+        }
+      }
+    } catch (e) {
+      debugPrint('❌ Error adding pages: $e');
+      if (mounted) {
+        String errorMessage = 'Error adding pages';
+        if (e.toString().contains('permissions')) {
+          errorMessage = 'Permission error - please grant camera and storage permissions';
+        } else if (e.toString().contains('camera')) {
+          errorMessage = 'Camera error - please check camera permissions';
+        } else {
+          errorMessage = 'Error adding pages: ${e.toString().split(':').last.trim()}';
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorMessage), backgroundColor: Colors.red, duration: const Duration(seconds: 3)));
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isAddingPages = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _previewPdf() async {
     if (_document!.pdfPath != null) {
       debugPrint('👁️ Opening PDF preview for: ${_document!.pdfPath}');
       context.push('/pdf-preview/${_document!.id}');

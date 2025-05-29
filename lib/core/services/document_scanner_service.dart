@@ -398,6 +398,71 @@ class DocumentScannerService {
       throw DocumentScannerException('Failed to capture document manually: $e');
     }
   }
+
+  /// Add new pages to an existing document
+  ///
+  /// [existingDocument] - The document to add pages to
+  /// [maxNewPages] - Maximum number of new pages to scan (default: 5)
+  /// Returns the updated document with new pages added
+  static Future<DocumentModel?> addPagesToDocument(DocumentModel existingDocument, {int maxNewPages = 5}) async {
+    debugPrint('$_tag: Adding pages to existing document: ${existingDocument.name} (current pages: ${existingDocument.imagePaths.length})');
+
+    try {
+      // Scan new pages
+      final newImagePaths = await scanDocumentsAsImages(maxPages: maxNewPages);
+
+      if (newImagePaths.isEmpty) {
+        debugPrint('$_tag: No new pages scanned');
+        return null;
+      }
+
+      debugPrint('$_tag: Scanned ${newImagePaths.length} new pages');
+
+      // Combine existing and new image paths
+      final allImagePaths = [...existingDocument.imagePaths, ...newImagePaths];
+      debugPrint('$_tag: Total pages after adding: ${allImagePaths.length}');
+
+      // Create new PDF with all pages
+      final pdfData = await _createPdfFromImages(allImagePaths);
+
+      if (pdfData == null) {
+        throw DocumentScannerException('Failed to create PDF from combined images');
+      }
+
+      // Save the new PDF (overwrite existing one if it exists)
+      final appDocDir = await getApplicationDocumentsDirectory();
+      final fileName = 'scanned_document_${DateTime.now().millisecondsSinceEpoch}.pdf';
+      final newPdfPath = join(appDocDir.path, fileName);
+      final pdfFile = File(newPdfPath);
+
+      await pdfFile.writeAsBytes(pdfData);
+
+      final fileSize = await pdfFile.length();
+      debugPrint('$_tag: Updated PDF created successfully: $newPdfPath (${fileSize} bytes)');
+
+      // Delete old PDF if it exists
+      if (existingDocument.pdfPath != null) {
+        try {
+          final oldPdfFile = File(existingDocument.pdfPath!);
+          if (await oldPdfFile.exists()) {
+            await oldPdfFile.delete();
+            debugPrint('$_tag: Deleted old PDF: ${existingDocument.pdfPath}');
+          }
+        } catch (e) {
+          debugPrint('$_tag: Warning - could not delete old PDF: $e');
+        }
+      }
+
+      // Create updated document model
+      final updatedDocument = existingDocument.copyWith(imagePaths: allImagePaths, pdfPath: newPdfPath, updatedAt: DateTime.now());
+
+      debugPrint('$_tag: Successfully added ${newImagePaths.length} pages to document');
+      return updatedDocument;
+    } catch (e) {
+      debugPrint('$_tag: Error adding pages to document: $e');
+      throw DocumentScannerException('Failed to add pages to document: $e');
+    }
+  }
 }
 
 /// Custom exception for document scanner errors
