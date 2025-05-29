@@ -15,6 +15,14 @@ class _CloudSettingsPageState extends ConsumerState<CloudSettingsPage> {
   bool _isAuthenticating = false;
 
   @override
+  void initState() {
+    super.initState();
+    // Add listeners to update UI when text changes
+    _clientIdController.addListener(() => setState(() {}));
+    _authCodeController.addListener(() => setState(() {}));
+  }
+
+  @override
   void dispose() {
     _clientIdController.dispose();
     _authCodeController.dispose();
@@ -28,7 +36,7 @@ class _CloudSettingsPageState extends ConsumerState<CloudSettingsPage> {
     return Scaffold(
       backgroundColor: theme.colorScheme.surface,
       appBar: AppBar(title: const Text('OneDrive Settings'), backgroundColor: theme.appBarTheme.backgroundColor, foregroundColor: theme.appBarTheme.foregroundColor),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -70,25 +78,68 @@ class _CloudSettingsPageState extends ConsumerState<CloudSettingsPage> {
                     children: [
                       Text('Setup Instructions', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
                       const SizedBox(height: 12),
-                      const Text(
-                        '1. Register your app in Azure AD\n'
-                        '2. Get your Client ID\n'
-                        '3. Enter Client ID below\n'
-                        '4. Follow the authentication flow',
-                      ),
+                      if (OneDriveService.hasDefaultClientId) ...[
+                        const Text(
+                          'Quick Setup (Recommended):\n'
+                          '• App is pre-configured for easy access\n'
+                          '• You\'ll log in with your personal Microsoft account\n'
+                          '• Access your personal OneDrive storage\n\n'
+                          'Advanced Setup:\n'
+                          '• Register your own app in Azure AD\n'
+                          '• Enter your custom Client ID below',
+                        ),
+                      ] else ...[
+                        const Text(
+                          'To enable OneDrive integration:\n\n'
+                          'Option 1 - Manual Setup:\n'
+                          '• Register app in Azure AD\n'
+                          '• Enter your Client ID below\n'
+                          '• Follow authentication flow\n\n'
+                          'Option 2 - Ask Developer:\n'
+                          '• Request pre-configured setup\n'
+                          '• Easier for end users',
+                          style: TextStyle(height: 1.4),
+                        ),
+                      ],
                     ],
                   ),
                 ),
               ),
 
               const SizedBox(height: 16),
+              if (OneDriveService.hasDefaultClientId) ...[
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text('Quick Setup', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 12),
+                        const Text('✨ Easy OneDrive connection - just authenticate with your Microsoft account!'),
+                        const SizedBox(height: 16),
+                        ElevatedButton(
+                          onPressed: () => _startQuickAuthentication(),
+                          style: ElevatedButton.styleFrom(backgroundColor: theme.colorScheme.primary),
+                          child: const Text('Quick Connect to OneDrive'),
+                        ),
+                        const SizedBox(height: 8),
+                        const Divider(),
+                        const SizedBox(height: 8),
+                        Text('Or use custom settings below:', style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w500)),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Text('Authentication', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                      Text(OneDriveService.hasDefaultClientId ? 'Custom Authentication' : 'Authentication', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
                       const SizedBox(height: 16),
                       TextField(controller: _clientIdController, decoration: const InputDecoration(labelText: 'Client ID', hintText: 'Enter your Azure AD Client ID', border: OutlineInputBorder())),
                       const SizedBox(height: 16),
@@ -162,16 +213,54 @@ class _CloudSettingsPageState extends ConsumerState<CloudSettingsPage> {
       context: context,
       builder:
           (context) => AlertDialog(
-            title: const Text('Authorization Required'),
+            title: const Text('Microsoft Account Login'),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Please open this URL in your browser:'),
+                const Text('🔵 You will now log in with your personal Microsoft account (Outlook, Hotmail, Xbox, etc.)'),
+                const SizedBox(height: 12),
+                const Text('1. Open this URL in your browser:'),
                 const SizedBox(height: 8),
                 SelectableText(authUrl, style: const TextStyle(fontSize: 12)),
                 const SizedBox(height: 12),
-                const Text('After authorization, copy the code parameter from the redirect URL and paste it in the Authorization Code field.'),
+                const Text('2. Log in with your Microsoft account'),
+                const Text('3. Allow access to your OneDrive'),
+                const Text('4. Copy the authorization code from the redirect URL'),
+                const Text('5. Paste it below and complete authentication'),
+              ],
+            ),
+            actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('OK'))],
+          ),
+    );
+  }
+
+  void _startQuickAuthentication() {
+    if (!OneDriveService.hasDefaultClientId) return;
+
+    final authUrl = OneDriveService.getDefaultAuthUrl();
+
+    showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('🚀 Quick Microsoft Login'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('✨ Ready to connect your personal OneDrive!'),
+                const SizedBox(height: 12),
+                const Text('🔵 You\'ll log in with your Microsoft account (Outlook, Hotmail, Xbox, etc.)'),
+                const SizedBox(height: 12),
+                const Text('1. Open this URL in your browser:'),
+                const SizedBox(height: 8),
+                SelectableText(authUrl, style: const TextStyle(fontSize: 12)),
+                const SizedBox(height: 12),
+                const Text('2. Log in with your Microsoft account'),
+                const Text('3. Allow access to your OneDrive'),
+                const Text('4. Copy the authorization code from the redirect URL'),
+                const Text('5. Paste it in the "Authorization Code" field below'),
               ],
             ),
             actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('OK'))],
@@ -183,14 +272,20 @@ class _CloudSettingsPageState extends ConsumerState<CloudSettingsPage> {
     final clientId = _clientIdController.text.trim();
     final authCode = _authCodeController.text.trim();
 
-    if (clientId.isEmpty || authCode.isEmpty) return;
+    // Use default client ID if custom one is not provided and default is available
+    final finalClientId = clientId.isNotEmpty ? clientId : (OneDriveService.hasDefaultClientId ? OneDriveService.defaultClientId : '');
+
+    if (finalClientId.isEmpty || authCode.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please provide authorization code'), backgroundColor: Colors.red));
+      return;
+    }
 
     setState(() {
       _isAuthenticating = true;
     });
 
     try {
-      final success = await OneDriveService.authenticate(clientId, authCode);
+      final success = await OneDriveService.authenticate(finalClientId, authCode);
 
       if (success) {
         if (mounted) {

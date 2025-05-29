@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:document_scanner/core/services/storage_service.dart';
 import 'package:document_scanner/core/services/permission_service.dart';
+import 'package:document_scanner/core/services/onedrive_service.dart';
 import 'package:document_scanner/core/providers/theme_provider.dart';
 import 'package:document_scanner/core/router/app_router.dart';
 import 'package:document_scanner/core/theme/app_theme.dart';
@@ -11,6 +13,16 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   debugPrint('🚀 Starting Document Scanner App initialization...');
+
+  debugPrint('⚙️ Loading environment variables...');
+  try {
+    await dotenv.load(fileName: ".env");
+    debugPrint('✅ Environment variables loaded successfully');
+  } catch (e) {
+    debugPrint('⚠️ Warning: Could not load .env file: $e');
+    debugPrint('📝 App will work without .env file, but some features may be limited');
+  }
+
   debugPrint('📦 Initializing Hive...');
   try {
     await Hive.initFlutter();
@@ -27,6 +39,20 @@ void main() async {
   } catch (e) {
     debugPrint('❌ Error initializing Storage Service: $e');
     rethrow;
+  }
+
+  debugPrint('☁️ Initializing OneDrive Service...');
+  try {
+    await OneDriveService.initialize();
+    debugPrint('✅ OneDrive Service initialized successfully');
+    if (OneDriveService.isAuthenticated) {
+      debugPrint('🔐 OneDrive authentication restored from saved tokens');
+    } else {
+      debugPrint('🔑 No saved OneDrive authentication found');
+    }
+  } catch (e) {
+    debugPrint('❌ Error initializing OneDrive Service: $e');
+    // Don't rethrow - OneDrive is optional
   }
 
   debugPrint('🔐 Requesting storage permissions...');

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:document_scanner/core/services/storage_service.dart';
 import 'package:document_scanner/core/models/document_model.dart';
 import 'package:document_scanner/core/models/scan_session_model.dart';
+import 'package:document_scanner/core/services/auto_backup_service.dart';
 
 final documentsProvider = StateNotifierProvider<DocumentsNotifier, List<DocumentModel>>((ref) {
   debugPrint('🏗️ Creating DocumentsNotifier provider');
@@ -34,10 +35,24 @@ class DocumentsNotifier extends StateNotifier<List<DocumentModel>> {
   }
 
   Future<void> addDocument(DocumentModel document) async {
-    debugPrint('➕ Adding new document: ${document.name} (ID: ${document.id})');
+    debugPrint('💾 Adding new document: ${document.name} (ID: ${document.id})');
     await StorageService.documentsBox.put(document.id, document);
     _loadDocuments();
     debugPrint('✅ Document added successfully');
+
+    // Trigger auto backup if enabled
+    if (AutoBackupService.isAutoBackupEnabled) {
+      debugPrint('🔄 Triggering auto backup for new document: ${document.name}');
+      final backupSuccess = await AutoBackupService.autoBackupDocument(document);
+
+      if (backupSuccess) {
+        // Update document to mark as uploaded
+        final updatedDocument = document.copyWith(isUploaded: true);
+        await StorageService.documentsBox.put(updatedDocument.id, updatedDocument);
+        _loadDocuments();
+        debugPrint('✅ Document auto-backed up and marked as uploaded');
+      }
+    }
   }
 
   Future<void> updateDocument(DocumentModel document) async {
@@ -46,6 +61,20 @@ class DocumentsNotifier extends StateNotifier<List<DocumentModel>> {
     await StorageService.documentsBox.put(updatedDocument.id, updatedDocument);
     _loadDocuments();
     debugPrint('✅ Document updated successfully');
+
+    // Trigger auto backup if enabled and document has PDF but isn't uploaded yet
+    if (AutoBackupService.isAutoBackupEnabled && updatedDocument.pdfPath != null && !updatedDocument.isUploaded) {
+      debugPrint('🔄 Triggering auto backup for updated document: ${updatedDocument.name}');
+      final backupSuccess = await AutoBackupService.autoBackupDocument(updatedDocument);
+
+      if (backupSuccess) {
+        // Update document to mark as uploaded
+        final finalDocument = updatedDocument.copyWith(isUploaded: true);
+        await StorageService.documentsBox.put(finalDocument.id, finalDocument);
+        _loadDocuments();
+        debugPrint('✅ Updated document auto-backed up and marked as uploaded');
+      }
+    }
   }
 
   Future<void> deleteDocument(String documentId) async {

@@ -420,10 +420,18 @@ class _DocumentDetailPageState extends ConsumerState<DocumentDetailPage> {
         fileName = '${_document!.name}.pdf';
       }
 
-      if (_document!.isEncrypted && _document!.encryptionKeyId != null) {
+      // Add encryption if enabled
+      if (EncryptionService.isEncryptionEnabled && EncryptionService.hasUserKey) {
         debugPrint('🔒 Encrypting data before upload');
-        dataToUpload = await EncryptionService.encryptData(dataToUpload, _document!.encryptionKeyId!);
-        fileName = '$fileName.encrypted';
+        final encryptedData = await EncryptionService.encryptData(dataToUpload);
+
+        if (encryptedData != null) {
+          dataToUpload = encryptedData;
+          fileName = '$fileName.encrypted';
+          debugPrint('✅ Data encrypted for upload: ${dataToUpload.length} bytes');
+        } else {
+          debugPrint('❌ Encryption failed, uploading without encryption');
+        }
       }
 
       debugPrint('☁️ Uploading to OneDrive: $fileName (${dataToUpload.length} bytes)');

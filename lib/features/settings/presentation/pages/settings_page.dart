@@ -6,6 +6,9 @@ import 'package:document_scanner/core/providers/storage_provider.dart';
 import 'package:document_scanner/core/providers/document_settings_provider.dart';
 import 'package:document_scanner/core/services/permission_service.dart';
 import 'package:document_scanner/core/services/storage_service.dart';
+import 'package:document_scanner/core/services/auto_backup_service.dart';
+import 'package:document_scanner/core/services/onedrive_service.dart';
+import 'package:document_scanner/core/services/encryption_service.dart';
 
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
@@ -110,23 +113,64 @@ class SettingsPage extends ConsumerWidget {
           ListTile(
             leading: Icon(Icons.cloud, color: theme.colorScheme.primary),
             title: const Text('OneDrive Integration'),
-            subtitle: const Text('Configure cloud storage'),
+            subtitle: Text(OneDriveService.isAuthenticated ? 'Connected' : 'Configure cloud storage'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => context.push('/cloud-settings'),
           ),
           const Divider(height: 1),
-          ListTile(
-            leading: Icon(Icons.sync, color: theme.colorScheme.primary),
-            title: const Text('Auto Sync'),
-            subtitle: const Text('Automatically upload to cloud'),
-            trailing: Switch(
-              value: false, // TODO: Implement auto sync setting
-              onChanged: (value) {
-                debugPrint('🔄 Auto sync toggle requested: $value');
-                // TODO: Implement auto sync toggle
-              },
-            ),
+          // Auto Backup Toggle
+          StatefulBuilder(
+            builder:
+                (context, setState) => ListTile(
+                  leading: Icon(Icons.sync, color: theme.colorScheme.primary),
+                  title: const Text('Auto Backup'),
+                  subtitle: Text(OneDriveService.isAuthenticated ? 'Automatically upload PDFs to OneDrive' : 'Connect OneDrive to enable auto backup'),
+                  trailing: Switch(
+                    value: OneDriveService.isAuthenticated ? AutoBackupService.isAutoBackupEnabled : false,
+                    onChanged:
+                        OneDriveService.isAuthenticated
+                            ? (value) async {
+                              debugPrint('🔄 Auto backup toggle requested: $value');
+                              await AutoBackupService.setAutoBackupEnabled(value);
+                              setState(() {}); // Update the toggle state
+
+                              if (value) {
+                                // Create backup folder on first enable
+                                final folderId = await AutoBackupService.createBackupFolder();
+                                if (folderId != null) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(
+                                      context,
+                                    ).showSnackBar(const SnackBar(content: Text('Auto backup enabled! Created "Document Scanner Backup" folder in OneDrive'), backgroundColor: Colors.green));
+                                  }
+                                } else {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(
+                                      context,
+                                    ).showSnackBar(const SnackBar(content: Text('Auto backup enabled! Documents will be uploaded to OneDrive root'), backgroundColor: Colors.green));
+                                  }
+                                }
+                              } else {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Auto backup disabled'), backgroundColor: Colors.orange));
+                                }
+                              }
+                            }
+                            : null,
+                  ),
+                ),
           ),
+          // Manual Sync Button
+          if (OneDriveService.isAuthenticated) ...[
+            const Divider(height: 1),
+            ListTile(
+              leading: Icon(Icons.cloud_sync, color: theme.colorScheme.primary),
+              title: const Text('Sync All Documents'),
+              subtitle: const Text('Upload all PDFs to OneDrive now'),
+              trailing: const Icon(Icons.upload),
+              onTap: () => _performManualSync(context),
+            ),
+          ],
         ],
       ),
     );
@@ -136,26 +180,49 @@ class SettingsPage extends ConsumerWidget {
     return Card(
       child: Column(
         children: [
-          ListTile(
-            leading: Icon(Icons.security, color: theme.colorScheme.primary),
-            title: const Text('Encryption'),
-            subtitle: const Text('Enable document encryption'),
-            trailing: Switch(
-              value: true, // TODO: Implement encryption setting
-              onChanged: (value) {
-                debugPrint('🔒 Encryption toggle requested: $value');
-                // TODO: Implement encryption toggle
-              },
-            ),
+          // Encryption Toggle
+          StatefulBuilder(
+            builder:
+                (context, setState) => ListTile(
+                  leading: Icon(Icons.security, color: theme.colorScheme.primary),
+                  title: const Text('Document Encryption'),
+                  subtitle: Text(EncryptionService.hasUserKey ? 'Encrypt documents before cloud upload' : 'Set up encryption password first'),
+                  trailing: Switch(
+                    value: EncryptionService.isEncryptionEnabled,
+                    onChanged:
+                        EncryptionService.hasUserKey
+                            ? (value) async {
+                              debugPrint('🔒 Encryption toggle requested: $value');
+                              await EncryptionService.setEncryptionEnabled(value);
+                              setState(() {}); // Update the toggle state
+
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(
+                                  context,
+                                ).showSnackBar(SnackBar(content: Text('Encryption ${value ? 'enabled' : 'disabled'}'), backgroundColor: value ? Colors.green : Colors.orange));
+                              }
+                            }
+                            : null,
+                  ),
+                ),
           ),
           const Divider(height: 1),
           ListTile(
             leading: Icon(Icons.key, color: theme.colorScheme.primary),
-            title: const Text('Encryption Keys'),
-            subtitle: const Text('Manage encryption keys'),
+            title: Text(EncryptionService.hasUserKey ? 'Change Encryption Password' : 'Set Up Encryption'),
+            subtitle: Text(EncryptionService.hasUserKey ? 'Change your encryption password' : 'Create a password to encrypt your documents'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () => _showEncryptionKeysDialog(context),
+            onTap: () => _showEncryptionSetupDialog(context),
           ),
+          if (EncryptionService.hasUserKey) ...[
+            const Divider(height: 1),
+            ListTile(
+              leading: Icon(Icons.delete_forever, color: Colors.red),
+              title: const Text('Clear Encryption'),
+              subtitle: const Text('Remove encryption and password'),
+              onTap: () => _showClearEncryptionDialog(context),
+            ),
+          ],
         ],
       ),
     );
@@ -606,15 +673,67 @@ class SettingsPage extends ConsumerWidget {
     }
   }
 
-  void _showEncryptionKeysDialog(BuildContext context) {
-    debugPrint('🔑 Showing encryption keys dialog');
+  void _showEncryptionSetupDialog(BuildContext context) {
+    debugPrint('🔒 Showing encryption setup dialog');
+    final passwordController = TextEditingController();
+
     showDialog(
       context: context,
       builder:
           (context) => AlertDialog(
-            title: const Text('Encryption Keys'),
-            content: const Text('Encryption keys are managed automatically and stored securely on your device.'),
-            actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('OK'))],
+            title: Text(EncryptionService.hasUserKey ? 'Change Encryption Password' : 'Set Up Encryption'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(EncryptionService.hasUserKey ? 'Enter a new password to change your encryption:' : 'Enter a password to encrypt your documents:'),
+                const SizedBox(height: 16),
+                TextField(controller: passwordController, obscureText: true, decoration: const InputDecoration(hintText: 'Enter password (min 8 characters)', border: OutlineInputBorder())),
+              ],
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+              TextButton(
+                onPressed: () async {
+                  final password = passwordController.text;
+                  if (password.length < 8) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Password must be at least 8 characters'), backgroundColor: Colors.red));
+                    return;
+                  }
+
+                  Navigator.of(context).pop();
+
+                  final success = await EncryptionService.setupEncryption(password);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(
+                      context,
+                    ).showSnackBar(SnackBar(content: Text(success ? 'Encryption set up successfully' : 'Failed to set up encryption'), backgroundColor: success ? Colors.green : Colors.red));
+                  }
+                },
+                child: const Text('Set Up'),
+              ),
+            ],
+          ),
+    );
+  }
+
+  void _showClearEncryptionDialog(BuildContext context) {
+    debugPrint('🔑 Showing clear encryption dialog');
+    showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Clear Encryption'),
+            content: const Text('Are you sure you want to remove encryption and password?'),
+            actions: [
+              TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+              TextButton(
+                onPressed: () async {
+                  Navigator.of(context).pop();
+                  await EncryptionService.clearEncryption();
+                },
+                child: const Text('Clear'),
+              ),
+            ],
           ),
     );
   }
@@ -698,5 +817,66 @@ class SettingsPage extends ConsumerWidget {
             ],
           ),
     );
+  }
+
+  Future<void> _performManualSync(BuildContext context) async {
+    debugPrint('🔄 Manual sync requested by user');
+
+    // Show loading dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder:
+          (context) => const AlertDialog(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Synchronizing documents...'),
+                Text('Please wait while we upload your PDFs to OneDrive', style: TextStyle(fontSize: 12)),
+              ],
+            ),
+          ),
+    );
+
+    try {
+      final result = await AutoBackupService.synchronizeAllDocuments();
+
+      if (context.mounted) {
+        Navigator.of(context).pop(); // Close loading dialog
+
+        final message = result['message'] as String;
+        final success = result['success'] as bool;
+        final uploaded = result['uploaded'] as int;
+        final failed = result['failed'] as int;
+        final skipped = result['skipped'] as int;
+
+        showDialog(
+          context: context,
+          builder:
+              (context) => AlertDialog(
+                title: Text(success ? 'Sync Complete' : 'Sync Finished with Issues'),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(message),
+                    if (uploaded > 0) ...[const SizedBox(height: 8), Text('✅ Uploaded: $uploaded documents')],
+                    if (skipped > 0) ...[const SizedBox(height: 4), Text('⏭️ Skipped: $skipped documents (already synced or no PDF)')],
+                    if (failed > 0) ...[const SizedBox(height: 4), Text('❌ Failed: $failed documents', style: const TextStyle(color: Colors.red))],
+                  ],
+                ),
+                actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('OK'))],
+              ),
+        );
+      }
+    } catch (e) {
+      debugPrint('❌ Manual sync error: $e');
+      if (context.mounted) {
+        Navigator.of(context).pop(); // Close loading dialog
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Sync failed: $e'), backgroundColor: Colors.red));
+      }
+    }
   }
 }
