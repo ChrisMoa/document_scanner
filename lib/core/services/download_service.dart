@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as path;
 import 'package:document_scanner/core/models/document_model.dart';
 import 'package:document_scanner/core/services/storage_service.dart';
@@ -72,7 +71,7 @@ class DownloadService {
     }
   }
 
-  /// Download all documents (local + cloud) to a user-selected output folder
+  /// Download all documents (local + cloud) to the app's local storage
   static Future<DownloadResult> downloadAllDocuments(List<DocumentModel> localDocuments) async {
     debugPrint('$_tag: Starting download of ${localDocuments.length} local documents');
 
@@ -84,29 +83,9 @@ class DownloadService {
     debugPrint('$_tag: Total documents to process: $totalCount (${localDocuments.length} local + ${cloudDocuments.length} cloud)');
 
     try {
-      // Get user's preferred save location as default
-      String? defaultPath = StorageService.getSaveLocation();
-      if (defaultPath == null) {
-        // Fallback to external app storage or default location
-        final externalDir = await StorageService.getExternalAppDirectory();
-        if (externalDir != null) {
-          defaultPath = externalDir;
-        } else {
-          defaultPath = await StorageService.getDefaultSaveLocation();
-        }
-      }
-
-      debugPrint('$_tag: Default download location: $defaultPath');
-
-      // Let user select output folder (with default)
-      final outputPath = await FilePicker.platform.getDirectoryPath(dialogTitle: 'Select Download Folder', initialDirectory: defaultPath);
-
-      if (outputPath == null) {
-        debugPrint('$_tag: User cancelled folder selection');
-        return DownloadResult(success: false, message: 'Download cancelled by user', downloadedCount: 0);
-      }
-
-      debugPrint('$_tag: Selected output folder: $outputPath');
+      // Use app's documents directory for downloads
+      final outputPath = await StorageService.getDefaultSaveLocation();
+      debugPrint('$_tag: Downloading to app storage: $outputPath');
 
       int downloadedCount = 0;
       int skippedCount = 0;
@@ -324,14 +303,8 @@ class DownloadService {
         fileName = '$fileName.pdf';
       }
 
-      // Save to user-selected output folder for download
-      final outputFile = File(path.join(outputPath, fileName));
-      await outputFile.writeAsBytes(dataToSave);
-      debugPrint('✅ Saved cloud document to download folder: ${outputFile.path} (${dataToSave.length} bytes)');
-
-      // ALSO save to app's internal storage for the app to access later
-      final appStorageDir = await StorageService.getDefaultSaveLocation();
-      final appStorageFile = File(path.join(appStorageDir, fileName));
+      // Save to app's storage (outputPath is already the app storage directory)
+      final appStorageFile = File(path.join(outputPath, fileName));
       
       // Create directory if it doesn't exist
       await appStorageFile.parent.create(recursive: true);

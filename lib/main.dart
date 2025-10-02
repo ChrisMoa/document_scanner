@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 import 'package:document_scanner/core/services/storage_service.dart';
 import 'package:document_scanner/core/services/permission_service.dart';
 import 'package:document_scanner/core/services/nextcloud_service.dart';
@@ -15,17 +14,9 @@ void main() async {
 
   // No environment file is required. Nextcloud credentials are stored in-app.
 
-  debugPrint('📦 Initializing Hive...');
+  debugPrint('💾 Initializing Storage Service (includes Hive setup)...');
   try {
-    await Hive.initFlutter();
-    debugPrint('✅ Hive initialized successfully');
-  } catch (e) {
-    debugPrint('❌ Error initializing Hive: $e');
-    rethrow;
-  }
-
-  debugPrint('💾 Initializing Storage Service...');
-  try {
+    // StorageService.initialize() now handles Hive initialization with custom path
     await StorageService.initialize();
     debugPrint('✅ Storage Service initialized successfully');
   } catch (e) {

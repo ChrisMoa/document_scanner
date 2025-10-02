@@ -5,12 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cunning_document_scanner/cunning_document_scanner.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:image/image.dart' as img;
+import 'package:path/path.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:image/image.dart' as img;
+import 'package:document_scanner/core/services/storage_service.dart';
 import 'package:document_scanner/core/models/document_model.dart';
-import 'package:path/path.dart';
 
 /// Service for document scanning using cunning_document_scanner
 class DocumentScannerService {
@@ -150,10 +150,10 @@ class DocumentScannerService {
         return null;
       }
 
-      // Save the PDF
-      final appDocDir = await getApplicationDocumentsDirectory();
+      // Save the PDF to app's documents directory
+      final documentsDir = await StorageService.getDefaultSaveLocation();
       final fileName = 'scanned_document_${DateTime.now().millisecondsSinceEpoch}.pdf';
-      final pdfPath = join(appDocDir.path, fileName);
+      final pdfPath = join(documentsDir, fileName);
       final pdfFile = File(pdfPath);
 
       await pdfFile.writeAsBytes(pdfData);
@@ -292,10 +292,10 @@ class DocumentScannerService {
       // Light sharpening only since cunning_document_scanner already did the heavy lifting
       enhanced = img.convolution(enhanced, filter: [0, -0.5, 0, -0.5, 3, -0.5, 0, -0.5, 0]);
 
-      // Save the enhanced image
-      final appDocDir = await getApplicationDocumentsDirectory();
+      // Save the enhanced image to app's images directory
+      final imagesDir = await StorageService.getImagesDirectory();
       final fileName = 'enhanced_${DateTime.now().millisecondsSinceEpoch}_$index.jpg';
-      final enhancedPath = join(appDocDir.path, fileName);
+      final enhancedPath = join(imagesDir, fileName);
 
       final enhancedBytes = img.encodeJpg(enhanced, quality: 95);
       await File(enhancedPath).writeAsBytes(enhancedBytes);
@@ -407,9 +407,9 @@ class DocumentScannerService {
       }
 
       // Save the new PDF (overwrite existing one if it exists)
-      final appDocDir = await getApplicationDocumentsDirectory();
+      final documentsDir = await StorageService.getDefaultSaveLocation();
       final fileName = 'scanned_document_${DateTime.now().millisecondsSinceEpoch}.pdf';
-      final newPdfPath = join(appDocDir.path, fileName);
+      final newPdfPath = join(documentsDir, fileName);
       final pdfFile = File(newPdfPath);
 
       await pdfFile.writeAsBytes(pdfData);
