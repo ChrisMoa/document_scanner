@@ -158,15 +158,21 @@ class NextcloudService {
   static Future<Uint8List?> downloadFile(String fileId) async {
     if (!isAuthenticated) return null;
     try {
-      final path = _normalizePath(fileId);
-      final url = '$_webDavBasePath/$path';
+      // fileId is the relative path from listFiles
+      // It should already be properly encoded, so we just clean leading slashes
+      final cleanPath = fileId.trim().replaceAll(RegExp(r'^/+'), '');
+      final url = '$_webDavBasePath/$cleanPath';
+      debugPrint('📥 Downloading from Nextcloud: $url');
+      debugPrint('📥 File ID: $fileId');
       final response = await _dio.get(url, options: Options(responseType: ResponseType.bytes));
       if (response.statusCode != null && response.statusCode! >= 200 && response.statusCode! < 300) {
         final bytes = response.data as List<int>;
+        debugPrint('✅ Downloaded ${bytes.length} bytes from $cleanPath');
         return Uint8List.fromList(bytes);
       }
+      debugPrint('❌ Download failed with status ${response.statusCode} for $cleanPath');
     } catch (e) {
-      debugPrint('❌ Download error: $e');
+      debugPrint('❌ Download error for $fileId: $e');
     }
     return null;
   }
@@ -190,13 +196,30 @@ class NextcloudService {
       final parent = parentId == null || parentId.trim().isEmpty ? '' : '${_normalizePath(parentId)}/';
       final path = '$parent${_encodePathSegment(folderName)}';
 
-      // If exists, return it
+      // Check if folder already exists first
       final existing = await findFolder(folderName, parentId: parentId);
-      if (existing != null) return existing;
+      if (existing != null) {
+        debugPrint('✅ Folder already exists: $folderName');
+        return existing;
+      }
 
       final url = '$_webDavBasePath/$path';
+      debugPrint('📁 Creating folder at: $url');
       final response = await _dio.request(url, options: Options(method: 'MKCOL'));
       if (response.statusCode != null && response.statusCode! >= 200 && response.statusCode! < 300) {
+        debugPrint('✅ Folder created: $folderName');
+        return {
+          'id': path,
+          'name': folderName,
+          'folder': <String, dynamic>{},
+        };
+      } else if (response.statusCode == 405) {
+        // 405 Method Not Allowed usually means folder already exists
+        debugPrint('⚠️ Folder might already exist (405): $folderName');
+        // Try to find it again
+        final retry = await findFolder(folderName, parentId: parentId);
+        if (retry != null) return retry;
+        // Return a basic folder object if we can't find it but it exists
         return {
           'id': path,
           'name': folderName,
@@ -205,6 +228,17 @@ class NextcloudService {
       }
     } catch (e) {
       debugPrint('❌ Create folder error: $e');
+      // If it's a 405 error, the folder likely exists
+      if (e.toString().contains('405')) {
+        debugPrint('⚠️ Folder likely exists (405 error): $folderName');
+        final parent = parentId == null || parentId.trim().isEmpty ? '' : '${_normalizePath(parentId)}/';
+        final path = '$parent${_encodePathSegment(folderName)}';
+        return {
+          'id': path,
+          'name': folderName,
+          'folder': <String, dynamic>{},
+        };
+      }
     }
     return null;
   }
@@ -223,6 +257,7 @@ class NextcloudService {
     try {
       final path = folderId == null || folderId.trim().isEmpty ? '' : '${_normalizePath(folderId)}/';
       final url = '$_webDavBasePath/$path';
+      debugPrint('📂 Listing files from: $url');
 
       final response = await _dio.request(
         url,
@@ -263,8 +298,10 @@ class NextcloudService {
           });
         }
 
+        debugPrint('✅ Found ${results.length} items in $url');
         return results;
       }
+      debugPrint('❌ List files failed with status ${response.statusCode}');
     } catch (e) {
       debugPrint('❌ List files error: $e');
     }

@@ -31,12 +31,14 @@ class DownloadService {
       if (backupFolderId != null) {
         debugPrint('$_tag: Checking backup folder: $backupFolderId');
         files = await NextcloudService.listFiles(folderId: backupFolderId);
+        debugPrint('$_tag: Found ${files?.length ?? 0} items in backup folder');
       }
 
       // If backup folder failed or no files, try root
       if (files == null || files.isEmpty) {
-        debugPrint('$_tag: Checking Nextcloud root');
+        debugPrint('$_tag: Checking Nextcloud root (backup folder had ${files?.length ?? 'null'} items)');
         files = await NextcloudService.listFiles();
+        debugPrint('$_tag: Found ${files?.length ?? 0} items in root');
       }
 
       if (files == null) {
@@ -322,29 +324,38 @@ class DownloadService {
         fileName = '$fileName.pdf';
       }
 
-      // Save to output folder
+      // Save to user-selected output folder for download
       final outputFile = File(path.join(outputPath, fileName));
       await outputFile.writeAsBytes(dataToSave);
+      debugPrint('✅ Saved cloud document to download folder: ${outputFile.path} (${dataToSave.length} bytes)');
 
-      final fileSize = await outputFile.length();
-      debugPrint('✅ Saved cloud document to ${outputFile.path} (${fileSize} bytes)');
+      // ALSO save to app's internal storage for the app to access later
+      final appStorageDir = await StorageService.getDefaultSaveLocation();
+      final appStorageFile = File(path.join(appStorageDir, fileName));
+      
+      // Create directory if it doesn't exist
+      await appStorageFile.parent.create(recursive: true);
+      await appStorageFile.writeAsBytes(dataToSave);
+      debugPrint('✅ Saved cloud document to app storage: ${appStorageFile.path} (${dataToSave.length} bytes)');
 
       // Create DocumentModel for import
       final now = DateTime.now();
-      final documentId = 'cloud_${cloudDoc.id}_${now.millisecondsSinceEpoch}';
+      // Decode URL-encoded characters and replace slashes with underscores for a clean ID
+      final cleanId = Uri.decodeComponent(cloudDoc.id).replaceAll('/', '_').replaceAll(' ', '_');
+      final documentId = 'cloud_${cleanId}_${now.millisecondsSinceEpoch}';
 
       final document = DocumentModel(
         id: documentId,
         name: cloudDoc.displayName,
         imagePaths: [], // Cloud documents don't have individual images
-        pdfPath: outputFile.path,
+        pdfPath: appStorageFile.path, // Use app storage path, not download folder
         createdAt: cloudDoc.modifiedTime,
         updatedAt: now,
         isUploaded: true, // It was downloaded from cloud, so mark as uploaded
         cloudUrl: cloudDoc.downloadUrl,
         isEncrypted: cloudDoc.isEncrypted && !isDecrypted, // Mark as encrypted only if still encrypted
         isDownloaded: true, // Mark as downloaded since we just downloaded it
-        storageLocation: StorageService.getStorageLocationDisplayName(outputFile.path),
+        storageLocation: StorageService.getStorageLocationDisplayName(appStorageFile.path),
       );
 
       debugPrint('✅ Created DocumentModel for cloud document: ${document.name}');

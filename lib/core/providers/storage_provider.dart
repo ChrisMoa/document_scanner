@@ -92,6 +92,13 @@ class DocumentsNotifier extends StateNotifier<List<DocumentModel>> {
         await StorageService.deleteFile(document.pdfPath!);
       }
 
+      // If document was uploaded to cloud, optionally delete from cloud too
+      if (document.isUploaded && document.cloudUrl != null) {
+        debugPrint('☁️ Document was uploaded to cloud, considering cloud deletion...');
+        // Note: Currently we don't auto-delete from cloud to prevent accidental data loss
+        // User can manually delete from cloud if needed
+      }
+
       await StorageService.documentsBox.delete(documentId);
       _loadDocuments();
       debugPrint('✅ Document and associated files deleted successfully');
