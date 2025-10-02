@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:document_scanner/core/services/onedrive_service.dart';
+import 'package:document_scanner/core/services/nextcloud_service.dart';
 
 class CloudSettingsPage extends ConsumerStatefulWidget {
   const CloudSettingsPage({super.key});
@@ -10,14 +10,35 @@ class CloudSettingsPage extends ConsumerStatefulWidget {
 }
 
 class _CloudSettingsPageState extends ConsumerState<CloudSettingsPage> {
-  final TextEditingController _clientIdController = TextEditingController();
-  final TextEditingController _authCodeController = TextEditingController();
-  bool _isAuthenticating = false;
+  final TextEditingController _serverUrlController = TextEditingController();
+  final TextEditingController _usernameController = TextEditingController();
+  final TextEditingController _appPasswordController = TextEditingController();
+  bool _isConnecting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Update UI when text changes
+    _serverUrlController.addListener(() => setState(() {}));
+    _usernameController.addListener(() => setState(() {}));
+    _appPasswordController.addListener(() => setState(() {}));
+
+    // Prefill with stored values if available
+    final savedServer = NextcloudService.serverUrl;
+    final savedUser = NextcloudService.username;
+    if (savedServer != null && savedServer.isNotEmpty) {
+      _serverUrlController.text = savedServer;
+    }
+    if (savedUser != null && savedUser.isNotEmpty) {
+      _usernameController.text = savedUser;
+    }
+  }
 
   @override
   void dispose() {
-    _clientIdController.dispose();
-    _authCodeController.dispose();
+    _serverUrlController.dispose();
+    _usernameController.dispose();
+    _appPasswordController.dispose();
     super.dispose();
   }
 
@@ -27,8 +48,8 @@ class _CloudSettingsPageState extends ConsumerState<CloudSettingsPage> {
 
     return Scaffold(
       backgroundColor: theme.colorScheme.surface,
-      appBar: AppBar(title: const Text('OneDrive Settings'), backgroundColor: theme.appBarTheme.backgroundColor, foregroundColor: theme.appBarTheme.foregroundColor),
-      body: Padding(
+      appBar: AppBar(title: const Text('Nextcloud Settings'), backgroundColor: theme.appBarTheme.backgroundColor, foregroundColor: theme.appBarTheme.foregroundColor),
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -42,16 +63,15 @@ class _CloudSettingsPageState extends ConsumerState<CloudSettingsPage> {
                     Row(
                       children: [
                         Icon(Icons.cloud, color: theme.colorScheme.primary),
-                        const SizedBox(width: 8),
-                        Text('OneDrive Integration', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+                        Text('Nextcloud Integration', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
                       ],
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      OneDriveService.isAuthenticated ? 'Connected to OneDrive' : 'Not connected to OneDrive',
-                      style: theme.textTheme.bodyMedium?.copyWith(color: OneDriveService.isAuthenticated ? Colors.green : theme.colorScheme.onSurface.withOpacity(0.7)),
+                      NextcloudService.isAuthenticated ? 'Connected to Nextcloud' : 'Not connected to Nextcloud',
+                      style: theme.textTheme.bodyMedium?.copyWith(color: NextcloudService.isAuthenticated ? Colors.green : theme.colorScheme.onSurface.withOpacity(0.7)),
                     ),
-                    if (OneDriveService.isAuthenticated) ...[
+                    if (NextcloudService.isAuthenticated) ...[
                       const SizedBox(height: 16),
                       ElevatedButton(onPressed: () => _signOut(), style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white), child: const Text('Sign Out')),
                     ],
@@ -60,7 +80,7 @@ class _CloudSettingsPageState extends ConsumerState<CloudSettingsPage> {
               ),
             ),
 
-            if (!OneDriveService.isAuthenticated) ...[
+            if (!NextcloudService.isAuthenticated) ...[
               const SizedBox(height: 16),
               Card(
                 child: Padding(
@@ -71,10 +91,12 @@ class _CloudSettingsPageState extends ConsumerState<CloudSettingsPage> {
                       Text('Setup Instructions', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
                       const SizedBox(height: 12),
                       const Text(
-                        '1. Register your app in Azure AD\n'
-                        '2. Get your Client ID\n'
-                        '3. Enter Client ID below\n'
-                        '4. Follow the authentication flow',
+                        'To enable Nextcloud integration:\n\n'
+                        '• Enter your Nextcloud server URL (e.g., https://cloud.example.com)\n'
+                        '• Enter your Nextcloud username\n'
+                        '• Create an App Password in Nextcloud settings and paste it here\n'
+                        '• Tap Connect',
+                        style: TextStyle(height: 1.4),
                       ),
                     ],
                   ),
@@ -88,25 +110,23 @@ class _CloudSettingsPageState extends ConsumerState<CloudSettingsPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Text('Authentication', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                      Text('Connection', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
                       const SizedBox(height: 16),
-                      TextField(controller: _clientIdController, decoration: const InputDecoration(labelText: 'Client ID', hintText: 'Enter your Azure AD Client ID', border: OutlineInputBorder())),
+                      TextField(controller: _serverUrlController, decoration: const InputDecoration(labelText: 'Server URL', hintText: 'https://cloud.example.com', border: OutlineInputBorder())),
                       const SizedBox(height: 16),
-                      ElevatedButton(onPressed: _clientIdController.text.isNotEmpty ? () => _startAuthentication() : null, child: const Text('Get Authorization Code')),
+                      TextField(controller: _usernameController, decoration: const InputDecoration(labelText: 'Username', hintText: 'your-username', border: OutlineInputBorder())),
                       const SizedBox(height: 16),
-                      TextField(
-                        controller: _authCodeController,
-                        decoration: const InputDecoration(labelText: 'Authorization Code', hintText: 'Paste the code from browser', border: OutlineInputBorder()),
-                      ),
+                      TextField(controller: _appPasswordController, obscureText: true, decoration: const InputDecoration(labelText: 'App Password', hintText: 'Nextcloud app password', border: OutlineInputBorder())),
                       const SizedBox(height: 16),
                       ElevatedButton(
-                        onPressed: _isAuthenticating || _authCodeController.text.isEmpty ? null : () => _completeAuthentication(),
-                        child: _isAuthenticating ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Complete Authentication'),
+                        onPressed: _isConnecting || _serverUrlController.text.isEmpty || _usernameController.text.isEmpty || _appPasswordController.text.isEmpty ? null : () => _connect(),
+                        child: _isConnecting ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Connect'),
                       ),
                     ],
                   ),
                 ),
               ),
+
             ],
 
             const SizedBox(height: 24),
@@ -118,7 +138,7 @@ class _CloudSettingsPageState extends ConsumerState<CloudSettingsPage> {
                   children: [
                     Text('Cloud Storage Features', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 12),
-                    _buildFeatureItem(Icons.backup, 'Automatic Backup', 'Documents are automatically uploaded to OneDrive', theme),
+                    _buildFeatureItem(Icons.backup, 'Automatic Backup', 'Documents are automatically uploaded to Nextcloud', theme),
                     _buildFeatureItem(Icons.sync, 'Cross-Device Sync', 'Access your documents from any device', theme),
                     _buildFeatureItem(Icons.security, 'Encrypted Storage', 'Documents can be encrypted before upload', theme),
                   ],
@@ -152,54 +172,28 @@ class _CloudSettingsPageState extends ConsumerState<CloudSettingsPage> {
     );
   }
 
-  void _startAuthentication() {
-    final clientId = _clientIdController.text.trim();
-    if (clientId.isEmpty) return;
+  Future<void> _connect() async {
+    final serverUrl = _serverUrlController.text.trim();
+    final username = _usernameController.text.trim();
+    final appPassword = _appPasswordController.text.trim();
 
-    final authUrl = OneDriveService.getAuthUrl(clientId);
-
-    showDialog(
-      context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Text('Authorization Required'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Please open this URL in your browser:'),
-                const SizedBox(height: 8),
-                SelectableText(authUrl, style: const TextStyle(fontSize: 12)),
-                const SizedBox(height: 12),
-                const Text('After authorization, copy the code parameter from the redirect URL and paste it in the Authorization Code field.'),
-              ],
-            ),
-            actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('OK'))],
-          ),
-    );
-  }
-
-  Future<void> _completeAuthentication() async {
-    final clientId = _clientIdController.text.trim();
-    final authCode = _authCodeController.text.trim();
-
-    if (clientId.isEmpty || authCode.isEmpty) return;
+    if (serverUrl.isEmpty || username.isEmpty || appPassword.isEmpty) return;
 
     setState(() {
-      _isAuthenticating = true;
+      _isConnecting = true;
     });
 
     try {
-      final success = await OneDriveService.authenticate(clientId, authCode);
+      final success = await NextcloudService.authenticate(serverUrl, username, appPassword);
 
       if (success) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Successfully connected to OneDrive!'), backgroundColor: Colors.green));
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Successfully connected to Nextcloud!'), backgroundColor: Colors.green));
           setState(() {});
         }
       } else {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Authentication failed. Please try again.'), backgroundColor: Colors.red));
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Connection failed. Please check credentials.'), backgroundColor: Colors.red));
         }
       }
     } catch (e) {
@@ -209,7 +203,7 @@ class _CloudSettingsPageState extends ConsumerState<CloudSettingsPage> {
     } finally {
       if (mounted) {
         setState(() {
-          _isAuthenticating = false;
+          _isConnecting = false;
         });
       }
     }
@@ -221,7 +215,7 @@ class _CloudSettingsPageState extends ConsumerState<CloudSettingsPage> {
       builder:
           (context) => AlertDialog(
             title: const Text('Sign Out'),
-            content: const Text('Are you sure you want to sign out of OneDrive?'),
+            content: const Text('Are you sure you want to sign out of Nextcloud?'),
             actions: [
               TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
               TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Sign Out')),
@@ -230,7 +224,7 @@ class _CloudSettingsPageState extends ConsumerState<CloudSettingsPage> {
     );
 
     if (confirm == true) {
-      await OneDriveService.signOut();
+      await NextcloudService.signOut();
       if (mounted) {
         setState(() {});
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Signed out successfully')));

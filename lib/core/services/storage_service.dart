@@ -13,9 +13,35 @@ class StorageService {
   static late Box<DocumentModel> _documentsBox;
   static late Box<ScanSessionModel> _scanSessionsBox;
   static late Box<String> _settingsBox;
+  static late String _appDataDirectory;
+
+  /// Get the dedicated app data directory
+  static Future<String> getAppDataDirectory() async {
+    final appSupportDir = await getApplicationSupportDirectory();
+    final appDataDir = Directory(path.join(appSupportDir.path, 'document_scanner'));
+    
+    // Create subdirectories if they don't exist
+    await appDataDir.create(recursive: true);
+    await Directory(path.join(appDataDir.path, 'database')).create(recursive: true);
+    await Directory(path.join(appDataDir.path, 'documents')).create(recursive: true);
+    await Directory(path.join(appDataDir.path, 'images')).create(recursive: true);
+    await Directory(path.join(appDataDir.path, 'backups')).create(recursive: true);
+    
+    debugPrint('📁 App data directory: ${appDataDir.path}');
+    return appDataDir.path;
+  }
 
   static Future<void> initialize() async {
     debugPrint('🔧 Initializing StorageService...');
+
+    // Get app data directory
+    _appDataDirectory = await getAppDataDirectory();
+    debugPrint('📂 Using app data directory: $_appDataDirectory');
+
+    // Initialize Hive with custom path for database
+    final databasePath = path.join(_appDataDirectory, 'database');
+    Hive.init(databasePath);
+    debugPrint('💾 Hive database path: $databasePath');
 
     Hive.registerAdapter(DocumentModelAdapter());
     Hive.registerAdapter(ScanSessionModelAdapter());
@@ -31,11 +57,27 @@ class StorageService {
   static Box<ScanSessionModel> get scanSessionsBox => _scanSessionsBox;
   static Box<String> get settingsBox => _settingsBox;
 
+  /// Get the default save location for PDFs (inside app data directory)
   static Future<String> getDefaultSaveLocation() async {
-    final directory = await getApplicationDocumentsDirectory();
-    final defaultPath = '${directory.path}/DocumentScanner';
+    final defaultPath = path.join(_appDataDirectory, 'documents');
     debugPrint('📁 Default save location: $defaultPath');
     return defaultPath;
+  }
+
+  /// Get the images directory (inside app data directory)
+  static Future<String> getImagesDirectory() async {
+    final imagesPath = path.join(_appDataDirectory, 'images');
+    await Directory(imagesPath).create(recursive: true);
+    debugPrint('📁 Images directory: $imagesPath');
+    return imagesPath;
+  }
+
+  /// Get the backups directory (inside app data directory)
+  static Future<String> getBackupsDirectory() async {
+    final backupsPath = path.join(_appDataDirectory, 'backups');
+    await Directory(backupsPath).create(recursive: true);
+    debugPrint('📁 Backups directory: $backupsPath');
+    return backupsPath;
   }
 
   /// Get the external storage directory for the app (works on Android 11+)

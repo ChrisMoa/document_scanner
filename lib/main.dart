@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 import 'package:document_scanner/core/services/storage_service.dart';
 import 'package:document_scanner/core/services/permission_service.dart';
+import 'package:document_scanner/core/services/nextcloud_service.dart';
 import 'package:document_scanner/core/providers/theme_provider.dart';
 import 'package:document_scanner/core/router/app_router.dart';
 import 'package:document_scanner/core/theme/app_theme.dart';
@@ -11,22 +11,31 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   debugPrint('🚀 Starting Document Scanner App initialization...');
-  debugPrint('📦 Initializing Hive...');
-  try {
-    await Hive.initFlutter();
-    debugPrint('✅ Hive initialized successfully');
-  } catch (e) {
-    debugPrint('❌ Error initializing Hive: $e');
-    rethrow;
-  }
 
-  debugPrint('💾 Initializing Storage Service...');
+  // No environment file is required. Nextcloud credentials are stored in-app.
+
+  debugPrint('💾 Initializing Storage Service (includes Hive setup)...');
   try {
+    // StorageService.initialize() now handles Hive initialization with custom path
     await StorageService.initialize();
     debugPrint('✅ Storage Service initialized successfully');
   } catch (e) {
     debugPrint('❌ Error initializing Storage Service: $e');
     rethrow;
+  }
+
+  debugPrint('☁️ Initializing Nextcloud Service...');
+  try {
+    await NextcloudService.initialize();
+    debugPrint('✅ Nextcloud Service initialized successfully');
+    if (NextcloudService.isAuthenticated) {
+      debugPrint('🔐 Nextcloud authentication restored from saved credentials');
+    } else {
+      debugPrint('🔑 No saved Nextcloud authentication found');
+    }
+  } catch (e) {
+    debugPrint('❌ Error initializing Nextcloud Service: $e');
+    // Don't rethrow - Nextcloud is optional
   }
 
   debugPrint('🔐 Requesting storage permissions...');

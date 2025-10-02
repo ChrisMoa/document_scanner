@@ -28,13 +28,14 @@ class DocumentModelAdapter extends TypeAdapter<DocumentModel> {
       isEncrypted: fields[8] as bool,
       encryptionKeyId: fields[9] as String?,
       storageLocation: fields[10] as String?,
+      isDownloaded: fields[11] as bool,
     );
   }
 
   @override
   void write(BinaryWriter writer, DocumentModel obj) {
     writer
-      ..writeByte(11)
+      ..writeByte(12)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -56,7 +57,9 @@ class DocumentModelAdapter extends TypeAdapter<DocumentModel> {
       ..writeByte(9)
       ..write(obj.encryptionKeyId)
       ..writeByte(10)
-      ..write(obj.storageLocation);
+      ..write(obj.storageLocation)
+      ..writeByte(11)
+      ..write(obj.isDownloaded);
   }
 
   @override

@@ -30,10 +30,10 @@ The document scanner app now includes all the implemented features:
 - **Metadata Support**: Add title, author, and creation info
 - **File Management**: Automatic file naming with timestamps
 
-### ☁️ Cloud Storage (OneDrive)
+### ☁️ Cloud Storage (Nextcloud)
 
-- **OAuth2 Authentication**: Secure OneDrive integration
-- **Automatic Upload**: Background sync to cloud storage
+- **WebDAV Authentication**: Secure Nextcloud integration (server URL, username, app password)
+- **Automatic Upload**: Background sync to your Nextcloud storage
 - **Cross-device Access**: Access documents from any device
 - **Conflict Resolution**: Smart handling of file conflicts
 
@@ -218,12 +218,11 @@ AssetImage('assets/images/app_logo.png')
 
 ## Configuration
 
-### OneDrive Setup
+### Nextcloud Setup
 
-1. Register app in Azure AD
-2. Get Client ID
-3. Configure redirect URI: `https://login.microsoftonline.com/common/oauth2/nativeclient`
-4. Add Client ID in app settings
+1. Create an App Password in your Nextcloud account (Settings → Security)
+2. Open the app and go to Settings → Cloud & Sync → Nextcloud Integration
+3. Enter your server URL, username, and app password, then Connect
 
 ### Storage Configuration
 
@@ -257,9 +256,9 @@ AssetImage('assets/images/app_logo.png')
 
 ### Cloud Sync
 
-1. Go to Settings → OneDrive Integration
-2. Enter Client ID from Azure AD
-3. Follow authentication flow
+1. Go to Settings → Nextcloud Integration
+2. Enter server URL, username, and app password
+3. Tap Connect
 4. Documents automatically sync when connected
 
 ## Development
@@ -347,9 +346,9 @@ The app includes comprehensive debug logging:
 - Ensure sufficient storage space
 - Verify image files exist
 
-#### OneDrive Connection Issues
+#### Nextcloud Connection Issues
 
-- Verify Client ID is correct
+- Verify server URL, username, and app password
 - Check internet connection
 - Clear app data and re-authenticate
 
@@ -400,3 +399,63 @@ For issues and feature requests, please use the GitHub issue tracker.
 ---
 
 **Note**: This app prioritizes user privacy and data security. All document processing happens locally on your device, and you control when and what data is shared with cloud services.
+
+# Nextcloud Integration Setup Guide
+
+This guide will help you configure Nextcloud integration for the Document Scanner app.
+
+## Quick Setup
+
+1. **Create a Nextcloud App Password:**
+
+   - Log in to your Nextcloud web UI
+   - Open Settings → Security
+   - Create a new App Password (copy it once displayed)
+
+2. **Connect in the app:**
+
+   - Open the app → Settings → Cloud & Sync → Nextcloud Integration
+   - Enter server URL, username, and app password
+   - Tap "Connect"
+
+3. **Run the app:**
+
+   ```bash
+   flutter run
+   ```
+
+## Configuration Storage
+
+- Credentials are stored securely on-device using `SharedPreferences`.
+- You can update or revoke them anytime from Settings → Cloud & Sync.
+
+## Security Best Practices
+
+1. **Use App Passwords:**
+
+   - Prefer app passwords instead of your main password
+
+3. **HTTPS only:**
+
+   - Ensure your Nextcloud server uses HTTPS
+
+## Troubleshooting
+
+### "Connection failed"
+
+- Verify server URL, username, and app password
+- Make sure your server is reachable from the device
+- Try your credentials via a WebDAV client to verify
+
+## Development Notes
+
+- Nextcloud credentials are configured in-app and persisted via `SharedPreferences`.
+- Users can enter or change credentials anytime in Settings.
+
+## Support
+
+If you encounter issues:
+
+1. Check the debug console for error messages
+2. Verify your Nextcloud credentials
+3. Ensure all dependencies are installed: `flutter pub get`
