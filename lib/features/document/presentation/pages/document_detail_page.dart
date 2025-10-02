@@ -8,7 +8,7 @@ import 'package:document_scanner/core/providers/theme_provider.dart';
 import 'package:document_scanner/core/models/document_model.dart';
 import 'package:document_scanner/core/services/pdf_service.dart';
 import 'package:document_scanner/core/services/storage_service.dart';
-import 'package:document_scanner/core/services/onedrive_service.dart';
+import 'package:document_scanner/core/services/nextcloud_service.dart';
 import 'package:document_scanner/core/services/encryption_service.dart';
 import 'package:document_scanner/core/services/document_scanner_service.dart';
 import 'package:document_scanner/features/document/presentation/widgets/image_grid_view.dart';
@@ -393,8 +393,8 @@ class _DocumentDetailPageState extends ConsumerState<DocumentDetailPage> {
   }
 
   Future<void> _uploadToCloud() async {
-    if (!OneDriveService.isAuthenticated) {
-      debugPrint('☁️ OneDrive not authenticated, showing dialog');
+    if (!NextcloudService.isAuthenticated) {
+      debugPrint('☁️ Nextcloud not authenticated, showing dialog');
       _showCloudNotConnectedDialog();
       return;
     }
@@ -434,8 +434,8 @@ class _DocumentDetailPageState extends ConsumerState<DocumentDetailPage> {
         }
       }
 
-      debugPrint('☁️ Uploading to OneDrive: $fileName (${dataToUpload.length} bytes)');
-      final cloudUrl = await OneDriveService.uploadFile(dataToUpload, fileName);
+      debugPrint('☁️ Uploading to Nextcloud: $fileName (${dataToUpload.length} bytes)');
+      final cloudUrl = await NextcloudService.uploadFile(dataToUpload, fileName);
 
       if (cloudUrl != null) {
         debugPrint('✅ Upload successful: $cloudUrl');
@@ -447,7 +447,7 @@ class _DocumentDetailPageState extends ConsumerState<DocumentDetailPage> {
         });
 
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Document uploaded to OneDrive'), backgroundColor: Colors.green));
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Document uploaded to Nextcloud'), backgroundColor: Colors.green));
         }
       } else {
         throw Exception('Upload failed - no URL returned');
@@ -638,8 +638,8 @@ class _DocumentDetailPageState extends ConsumerState<DocumentDetailPage> {
       context: context,
       builder:
           (context) => AlertDialog(
-            title: const Text('OneDrive Not Connected'),
-            content: const Text('Please connect to OneDrive in Settings before uploading documents.'),
+            title: const Text('Nextcloud Not Connected'),
+            content: const Text('Please connect to Nextcloud in Settings before uploading documents.'),
             actions: [
               TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
               TextButton(

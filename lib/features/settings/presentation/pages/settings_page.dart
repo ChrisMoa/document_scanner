@@ -7,7 +7,7 @@ import 'package:document_scanner/core/providers/document_settings_provider.dart'
 import 'package:document_scanner/core/services/permission_service.dart';
 import 'package:document_scanner/core/services/storage_service.dart';
 import 'package:document_scanner/core/services/auto_backup_service.dart';
-import 'package:document_scanner/core/services/onedrive_service.dart';
+import 'package:document_scanner/core/services/nextcloud_service.dart';
 import 'package:document_scanner/core/services/encryption_service.dart';
 
 class SettingsPage extends ConsumerWidget {
@@ -112,61 +112,58 @@ class SettingsPage extends ConsumerWidget {
         children: [
           ListTile(
             leading: Icon(Icons.cloud, color: theme.colorScheme.primary),
-            title: const Text('OneDrive Integration'),
-            subtitle: Text(OneDriveService.isAuthenticated ? 'Connected' : 'Configure cloud storage'),
+            title: const Text('Nextcloud Integration'),
+            subtitle: Text(NextcloudService.isAuthenticated ? 'Connected' : 'Configure cloud storage'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => context.push('/cloud-settings'),
           ),
           const Divider(height: 1),
           // Auto Backup Toggle
           StatefulBuilder(
-            builder:
-                (context, setState) => ListTile(
-                  leading: Icon(Icons.sync, color: theme.colorScheme.primary),
-                  title: const Text('Auto Backup'),
-                  subtitle: Text(OneDriveService.isAuthenticated ? 'Automatically upload PDFs to OneDrive' : 'Connect OneDrive to enable auto backup'),
-                  trailing: Switch(
-                    value: OneDriveService.isAuthenticated ? AutoBackupService.isAutoBackupEnabled : false,
-                    onChanged:
-                        OneDriveService.isAuthenticated
-                            ? (value) async {
-                              debugPrint('🔄 Auto backup toggle requested: $value');
-                              await AutoBackupService.setAutoBackupEnabled(value);
-                              setState(() {}); // Update the toggle state
+            builder: (context, setState) => ListTile(
+              leading: Icon(Icons.sync, color: theme.colorScheme.primary),
+              title: const Text('Auto Backup'),
+              subtitle: Text(NextcloudService.isAuthenticated ? 'Automatically upload PDFs to Nextcloud' : 'Connect Nextcloud to enable auto backup'),
+              trailing: Switch(
+                value: NextcloudService.isAuthenticated ? AutoBackupService.isAutoBackupEnabled : false,
+                onChanged: NextcloudService.isAuthenticated
+                    ? (value) async {
+                        debugPrint('🔄 Auto backup toggle requested: $value');
+                        await AutoBackupService.setAutoBackupEnabled(value);
+                        setState(() {});
 
-                              if (value) {
-                                // Create backup folder on first enable
-                                final folderId = await AutoBackupService.createBackupFolder();
-                                if (folderId != null) {
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(
-                                      context,
-                                    ).showSnackBar(const SnackBar(content: Text('Auto backup enabled! Created "Document Scanner Backup" folder in OneDrive'), backgroundColor: Colors.green));
-                                  }
-                                } else {
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(
-                                      context,
-                                    ).showSnackBar(const SnackBar(content: Text('Auto backup enabled! Documents will be uploaded to OneDrive root'), backgroundColor: Colors.green));
-                                  }
-                                }
-                              } else {
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Auto backup disabled'), backgroundColor: Colors.orange));
-                                }
-                              }
+                        if (value) {
+                          final folderId = await AutoBackupService.createBackupFolder();
+                          if (folderId != null) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Auto backup enabled! Created "Document Scanner Backup" folder in Nextcloud'), backgroundColor: Colors.green),
+                              );
                             }
-                            : null,
-                  ),
-                ),
+                          } else {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Auto backup enabled! Documents will be uploaded to Nextcloud root'), backgroundColor: Colors.green),
+                              );
+                            }
+                          }
+                        } else {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Auto backup disabled'), backgroundColor: Colors.orange));
+                          }
+                        }
+                      }
+                    : null,
+              ),
+            ),
           ),
           // Manual Sync Button
-          if (OneDriveService.isAuthenticated) ...[
+          if (NextcloudService.isAuthenticated) ...[
             const Divider(height: 1),
             ListTile(
               leading: Icon(Icons.cloud_sync, color: theme.colorScheme.primary),
               title: const Text('Sync All Documents'),
-              subtitle: const Text('Upload all PDFs to OneDrive now'),
+              subtitle: const Text('Upload all PDFs to Nextcloud now'),
               trailing: const Icon(Icons.upload),
               onTap: () => _performManualSync(context),
             ),
@@ -834,7 +831,7 @@ class SettingsPage extends ConsumerWidget {
                 CircularProgressIndicator(),
                 SizedBox(height: 16),
                 Text('Synchronizing documents...'),
-                Text('Please wait while we upload your PDFs to OneDrive', style: TextStyle(fontSize: 12)),
+                Text('Please wait while we upload your PDFs to Nextcloud', style: TextStyle(fontSize: 12)),
               ],
             ),
           ),

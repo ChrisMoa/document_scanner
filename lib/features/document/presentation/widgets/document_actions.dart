@@ -138,7 +138,7 @@ class DocumentActions extends StatelessWidget {
                 _ShareOption(
                   icon: Icons.link,
                   title: 'Share Cloud Link',
-                  subtitle: document.isUploaded ? 'Share OneDrive link' : 'Upload to cloud first',
+                  subtitle: document.isUploaded ? 'Share Nextcloud link' : 'Upload to cloud first',
                   enabled: document.isUploaded,
                   onTap: () {
                     Navigator.of(context).pop();

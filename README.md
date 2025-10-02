@@ -30,10 +30,10 @@ The document scanner app now includes all the implemented features:
 - **Metadata Support**: Add title, author, and creation info
 - **File Management**: Automatic file naming with timestamps
 
-### ☁️ Cloud Storage (OneDrive)
+### ☁️ Cloud Storage (Nextcloud)
 
-- **OAuth2 Authentication**: Secure OneDrive integration
-- **Automatic Upload**: Background sync to cloud storage
+- **WebDAV Authentication**: Secure Nextcloud integration (server URL, username, app password)
+- **Automatic Upload**: Background sync to your Nextcloud storage
 - **Cross-device Access**: Access documents from any device
 - **Conflict Resolution**: Smart handling of file conflicts
 
@@ -218,12 +218,11 @@ AssetImage('assets/images/app_logo.png')
 
 ## Configuration
 
-### OneDrive Setup
+### Nextcloud Setup
 
-1. Register app in Azure AD
-2. Get Client ID
-3. Configure redirect URI: `https://login.microsoftonline.com/common/oauth2/nativeclient`
-4. Add Client ID in app settings
+1. Create an App Password in your Nextcloud account (Settings → Security)
+2. Open the app and go to Settings → Cloud & Sync → Nextcloud Integration
+3. Enter your server URL, username, and app password, then Connect
 
 ### Storage Configuration
 
@@ -257,9 +256,9 @@ AssetImage('assets/images/app_logo.png')
 
 ### Cloud Sync
 
-1. Go to Settings → OneDrive Integration
-2. Enter Client ID from Azure AD
-3. Follow authentication flow
+1. Go to Settings → Nextcloud Integration
+2. Enter server URL, username, and app password
+3. Tap Connect
 4. Documents automatically sync when connected
 
 ## Development
@@ -347,9 +346,9 @@ The app includes comprehensive debug logging:
 - Ensure sufficient storage space
 - Verify image files exist
 
-#### OneDrive Connection Issues
+#### Nextcloud Connection Issues
 
-- Verify Client ID is correct
+- Verify server URL, username, and app password
 - Check internet connection
 - Clear app data and re-authenticate
 

@@ -129,7 +129,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                     if (!stats.oneDriveConnected) ...[
                       const Text('💡 To download cloud documents:'),
                       const SizedBox(height: 8),
-                      const Text('1. Connect to OneDrive in Settings'),
+                      const Text('1. Connect to Nextcloud in Settings'),
                       const Text('2. Upload documents from other devices'),
                       const Text('3. Return here to download them'),
                       const SizedBox(height: 16),
@@ -240,7 +240,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                         children: [
                           Icon(stats.oneDriveConnected ? Icons.cloud_done : Icons.cloud_off, size: 16, color: stats.oneDriveConnected ? Colors.green : Colors.red),
                           const SizedBox(width: 4),
-                          Text(stats.oneDriveConnected ? 'OneDrive connected' : 'OneDrive disconnected', style: TextStyle(color: stats.oneDriveConnected ? Colors.green : Colors.red, fontSize: 12)),
+                          Text(stats.oneDriveConnected ? 'Nextcloud connected' : 'Nextcloud disconnected', style: TextStyle(color: stats.oneDriveConnected ? Colors.green : Colors.red, fontSize: 12)),
                         ],
                       ),
                       const SizedBox(height: 8),

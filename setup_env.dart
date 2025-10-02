@@ -36,14 +36,14 @@ void main() async {
 
     print('✅ Created .env file from template');
     print('\n📝 Next steps:');
-    print('   1. Edit .env file and replace dummy values');
-    print('   2. Get your Azure AD Client ID from:');
-    print('      https://portal.azure.com → Azure Active Directory → App registrations');
-    print('   3. Update ONEDRIVE_CLIENT_ID in .env file');
+    print('   1. Edit .env file and fill:');
+    print('      NEXTCLOUD_SERVER_URL, NEXTCLOUD_USERNAME, NEXTCLOUD_APP_PASSWORD');
+    print('   2. Create an App Password in your Nextcloud settings (Security)');
+    print('   3. Put the values into the .env file');
     print('   4. Run: flutter run');
     print('\n🔒 Security reminder:');
     print('   - Never commit the .env file to version control');
-    print('   - Keep your Client ID confidential');
+    print('   - Keep your app password confidential');
     print('   - The .env file is already in .gitignore');
   } catch (e) {
     print('❌ Error creating .env file: $e');

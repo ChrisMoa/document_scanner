@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:document_scanner/core/models/document_model.dart';
-import 'package:document_scanner/core/services/onedrive_service.dart';
+import 'package:document_scanner/core/services/nextcloud_service.dart';
 import 'package:document_scanner/core/services/storage_service.dart';
 import 'package:document_scanner/core/services/encryption_service.dart';
 import 'dart:typed_data';
@@ -15,6 +15,66 @@ class AutoBackupService {
     final enabled = StorageService.settingsBox.get(_autoBackupKey, defaultValue: 'false') == 'true';
     debugPrint('🔄 Auto backup enabled: $enabled');
     return enabled;
+  }
+
+  /// Upload a document to Nextcloud regardless of auto-backup setting.
+  /// Returns true if upload succeeds.
+  static Future<bool> uploadDocumentNow(DocumentModel document) async {
+    if (!NextcloudService.isAuthenticated) {
+      debugPrint('❌ Nextcloud not authenticated, cannot upload now: ${document.name}');
+      return false;
+    }
+
+    if (document.isUploaded) {
+      debugPrint('⏭️ Document already uploaded, skipping: ${document.name}');
+      return true;
+    }
+
+    try {
+      Uint8List? dataToUpload;
+      String fileName;
+
+      if (document.pdfPath != null && await _fileExists(document.pdfPath!)) {
+        final pdfFile = File(document.pdfPath!);
+        dataToUpload = await pdfFile.readAsBytes();
+        fileName = '${document.name}.pdf';
+      } else {
+        debugPrint('❌ Upload now: PDF not found at ${document.pdfPath}');
+        return false;
+      }
+
+      if (EncryptionService.isEncryptionEnabled && EncryptionService.hasUserKey) {
+        final encryptedData = await EncryptionService.encryptData(dataToUpload);
+        if (encryptedData != null) {
+          dataToUpload = encryptedData;
+          fileName = '$fileName.encrypted';
+        }
+      }
+
+      // Ensure/resolve backup folder
+      String? folderId = autoBackupFolderId ?? await createBackupFolder();
+
+      String? cloudUrl;
+      if (folderId != null) {
+        cloudUrl = await NextcloudService.uploadFile(dataToUpload, fileName, folderId: folderId);
+        if (cloudUrl == null) {
+          // fallback to root
+          cloudUrl = await NextcloudService.uploadFile(dataToUpload, fileName);
+        }
+      } else {
+        cloudUrl = await NextcloudService.uploadFile(dataToUpload, fileName);
+      }
+
+      if (cloudUrl != null) {
+        debugPrint('✅ Immediate upload successful: $cloudUrl');
+        return true;
+      }
+      debugPrint('❌ Immediate upload failed for ${document.name}');
+      return false;
+    } catch (e) {
+      debugPrint('❌ Immediate upload error for ${document.name}: $e');
+      return false;
+    }
   }
 
   /// Enable or disable auto backup
@@ -45,8 +105,8 @@ class AutoBackupService {
       return false;
     }
 
-    if (!OneDriveService.isAuthenticated) {
-      debugPrint('🔄 OneDrive not authenticated, skipping auto backup for: ${document.name}');
+    if (!NextcloudService.isAuthenticated) {
+      debugPrint('🔄 Nextcloud not authenticated, skipping auto backup for: ${document.name}');
       return false;
     }
 
@@ -92,17 +152,17 @@ class AutoBackupService {
         }
       }
 
-      debugPrint('☁️ Auto backup: Uploading to OneDrive: $fileName (${dataToUpload.length} bytes)');
+      debugPrint('☁️ Auto backup: Uploading to Nextcloud: $fileName (${dataToUpload.length} bytes)');
 
       // Get backup folder ID, create if needed
       String? folderId = autoBackupFolderId;
 
-      // Upload to OneDrive (try with backup folder first, fallback to root)
+      // Upload to Nextcloud (try with backup folder first, fallback to root)
       String? cloudUrl;
 
       if (folderId != null) {
         debugPrint('📁 Attempting upload to backup folder: $folderId');
-        cloudUrl = await OneDriveService.uploadFile(dataToUpload, fileName, folderId: folderId);
+        cloudUrl = await NextcloudService.uploadFile(dataToUpload, fileName, folderId: folderId);
 
         if (cloudUrl == null) {
           debugPrint('❌ Upload to backup folder failed, clearing invalid folder ID');
@@ -118,13 +178,13 @@ class AutoBackupService {
 
         if (folderId != null) {
           debugPrint('📁 Retrying upload to backup folder: $folderId');
-          cloudUrl = await OneDriveService.uploadFile(dataToUpload, fileName, folderId: folderId);
+          cloudUrl = await NextcloudService.uploadFile(dataToUpload, fileName, folderId: folderId);
         }
 
         // Final fallback: upload to root
         if (cloudUrl == null) {
-          debugPrint('📁 Fallback: uploading to OneDrive root');
-          cloudUrl = await OneDriveService.uploadFile(dataToUpload, fileName);
+          debugPrint('📁 Fallback: uploading to Nextcloud root');
+          cloudUrl = await NextcloudService.uploadFile(dataToUpload, fileName);
         }
       }
 
@@ -141,15 +201,15 @@ class AutoBackupService {
     }
   }
 
-  /// Create a dedicated backup folder in OneDrive
+  /// Create a dedicated backup folder in Nextcloud
   static Future<String?> createBackupFolder() async {
-    if (!OneDriveService.isAuthenticated) {
-      debugPrint('❌ Cannot create backup folder - OneDrive not authenticated');
+    if (!NextcloudService.isAuthenticated) {
+      debugPrint('❌ Cannot create backup folder - Nextcloud not authenticated');
       return null;
     }
 
     try {
-      debugPrint('📁 Setting up backup folder in OneDrive...');
+      debugPrint('📁 Setting up backup folder in Nextcloud...');
 
       // Check if we already have a folder ID saved
       final existingFolderId = autoBackupFolderId;
@@ -159,7 +219,7 @@ class AutoBackupService {
       }
 
       // Create or find the backup folder
-      final folderData = await OneDriveService.createFolder('Document Scanner Backup');
+      final folderData = await NextcloudService.createFolder('Document Scanner Backup');
 
       if (folderData != null) {
         final folderId = folderData['id'] as String;
@@ -174,13 +234,13 @@ class AutoBackupService {
     return null;
   }
 
-  /// Manually synchronize all documents with PDFs to OneDrive
+  /// Manually synchronize all documents with PDFs to Nextcloud
   static Future<Map<String, dynamic>> synchronizeAllDocuments() async {
     debugPrint('🔄 Starting manual synchronization of all documents...');
 
-    if (!OneDriveService.isAuthenticated) {
-      debugPrint('❌ OneDrive not authenticated for sync');
-      return {'success': false, 'message': 'OneDrive not connected', 'uploaded': 0, 'failed': 0, 'skipped': 0};
+    if (!NextcloudService.isAuthenticated) {
+      debugPrint('❌ Nextcloud not authenticated for sync');
+      return {'success': false, 'message': 'Nextcloud not connected', 'uploaded': 0, 'failed': 0, 'skipped': 0};
     }
 
     // Ensure backup folder exists
@@ -209,8 +269,8 @@ class AutoBackupService {
           continue;
         }
 
-        debugPrint('🔄 Uploading document: ${document.name}');
-        final success = await autoBackupDocument(document);
+        debugPrint('🔄 Uploading document (manual sync): ${document.name}');
+        final success = await uploadDocumentNow(document);
 
         if (success) {
           // Mark document as uploaded
@@ -224,7 +284,6 @@ class AutoBackupService {
         }
       } catch (e) {
         failed++;
-        debugPrint('❌ Error uploading ${document.name}: $e');
       }
     }
 
@@ -251,7 +310,7 @@ class AutoBackupService {
       final uploadedDocuments = allDocuments.where((doc) => doc.isUploaded).length;
       final pendingDocuments = totalDocuments - uploadedDocuments;
 
-      return {'total': totalDocuments, 'uploaded': uploadedDocuments, 'pending': pendingDocuments, 'autoBackupEnabled': isAutoBackupEnabled, 'oneDriveConnected': OneDriveService.isAuthenticated};
+      return {'total': totalDocuments, 'uploaded': uploadedDocuments, 'pending': pendingDocuments, 'autoBackupEnabled': isAutoBackupEnabled, 'oneDriveConnected': NextcloudService.isAuthenticated};
     } catch (e) {
       debugPrint('❌ Error getting backup stats: $e');
       return {'total': 0, 'uploaded': 0, 'pending': 0, 'autoBackupEnabled': false, 'oneDriveConnected': false};

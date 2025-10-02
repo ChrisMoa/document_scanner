@@ -1,7 +1,6 @@
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:document_scanner/core/services/storage_service.dart';
 
@@ -11,9 +10,8 @@ class OneDriveService {
   static const String _refreshTokenKey = 'onedrive_refresh_token';
   static const String _clientIdKey = 'onedrive_client_id';
 
-  // Get it from: https://portal.azure.com → Azure Active Directory → App registrations
-  // Example in .env: ONEDRIVE_CLIENT_ID=12345678-1234-1234-1234-123456789012
-  static String get _defaultClientId => dotenv.env['ONEDRIVE_CLIENT_ID'] ?? '';
+  // Legacy: Client ID no longer loaded from .env. Keep empty to avoid unused dependency.
+  static String get _defaultClientId => '';
 
   static late Dio _dio;
   static String? _accessToken;

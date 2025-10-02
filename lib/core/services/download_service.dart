@@ -7,18 +7,18 @@ import 'package:document_scanner/core/models/document_model.dart';
 import 'package:document_scanner/core/services/storage_service.dart';
 import 'package:document_scanner/core/services/encryption_service.dart';
 import 'package:document_scanner/core/services/pdf_service.dart';
-import 'package:document_scanner/core/services/onedrive_service.dart';
+import 'package:document_scanner/core/services/nextcloud_service.dart';
 import 'package:document_scanner/core/services/auto_backup_service.dart';
 
 class DownloadService {
   static const String _tag = 'DownloadService';
 
-  /// Get available cloud documents from OneDrive
+  /// Get available cloud documents from Nextcloud
   static Future<List<CloudDocument>> getCloudDocuments() async {
-    debugPrint('$_tag: Fetching cloud documents from OneDrive');
+    debugPrint('$_tag: Fetching cloud documents from Nextcloud');
 
-    if (!OneDriveService.isAuthenticated) {
-      debugPrint('$_tag: OneDrive not authenticated');
+    if (!NextcloudService.isAuthenticated) {
+      debugPrint('$_tag: Nextcloud not authenticated');
       return [];
     }
 
@@ -30,17 +30,17 @@ class DownloadService {
       // Try to get files from backup folder first, then root
       if (backupFolderId != null) {
         debugPrint('$_tag: Checking backup folder: $backupFolderId');
-        files = await OneDriveService.listFiles(folderId: backupFolderId);
+        files = await NextcloudService.listFiles(folderId: backupFolderId);
       }
 
       // If backup folder failed or no files, try root
       if (files == null || files.isEmpty) {
-        debugPrint('$_tag: Checking OneDrive root');
-        files = await OneDriveService.listFiles();
+        debugPrint('$_tag: Checking Nextcloud root');
+        files = await NextcloudService.listFiles();
       }
 
       if (files == null) {
-        debugPrint('$_tag: Failed to get files from OneDrive');
+        debugPrint('$_tag: Failed to get files from Nextcloud');
         return [];
       }
 
@@ -230,13 +230,13 @@ class DownloadService {
     }
   }
 
-  /// Download a cloud document from OneDrive to the output folder
+  /// Download a cloud document from Nextcloud to the output folder
   static Future<bool> _downloadCloudDocument(CloudDocument cloudDoc, String outputPath) async {
     try {
       debugPrint('$_tag: Downloading cloud document: ${cloudDoc.name} (${cloudDoc.size} bytes)');
 
-      // Download file data from OneDrive
-      final fileData = await OneDriveService.downloadFile(cloudDoc.id);
+      // Download file data from Nextcloud
+      final fileData = await NextcloudService.downloadFile(cloudDoc.id);
       if (fileData == null) {
         debugPrint('$_tag: Failed to download cloud document: ${cloudDoc.name}');
         return false;
@@ -287,8 +287,8 @@ class DownloadService {
     try {
       debugPrint('$_tag: Downloading and importing cloud document: ${cloudDoc.name} (${cloudDoc.size} bytes)');
 
-      // Download file data from OneDrive
-      final fileData = await OneDriveService.downloadFile(cloudDoc.id);
+      // Download file data from Nextcloud
+      final fileData = await NextcloudService.downloadFile(cloudDoc.id);
       if (fileData == null) {
         debugPrint('$_tag: Failed to download cloud document: ${cloudDoc.name}');
         return null;
@@ -386,7 +386,7 @@ class DownloadService {
       availableForDownload: availableForDownload,
       cloudDocuments: cloudDocuments.length,
       localDocuments: localDocuments.length,
-      oneDriveConnected: OneDriveService.isAuthenticated,
+      oneDriveConnected: NextcloudService.isAuthenticated,
     );
   }
 }
@@ -423,7 +423,7 @@ class DownloadStats {
   });
 }
 
-/// Represents a document stored in OneDrive cloud storage
+/// Represents a document stored in Nextcloud cloud storage
 class CloudDocument {
   final String id;
   final String name;

@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:document_scanner/core/services/storage_service.dart';
 import 'package:document_scanner/core/services/permission_service.dart';
-import 'package:document_scanner/core/services/onedrive_service.dart';
+import 'package:document_scanner/core/services/nextcloud_service.dart';
 import 'package:document_scanner/core/providers/theme_provider.dart';
 import 'package:document_scanner/core/router/app_router.dart';
 import 'package:document_scanner/core/theme/app_theme.dart';
@@ -14,14 +13,7 @@ void main() async {
 
   debugPrint('🚀 Starting Document Scanner App initialization...');
 
-  debugPrint('⚙️ Loading environment variables...');
-  try {
-    await dotenv.load(fileName: ".env");
-    debugPrint('✅ Environment variables loaded successfully');
-  } catch (e) {
-    debugPrint('⚠️ Warning: Could not load .env file: $e');
-    debugPrint('📝 App will work without .env file, but some features may be limited');
-  }
+  // No environment file is required. Nextcloud credentials are stored in-app.
 
   debugPrint('📦 Initializing Hive...');
   try {
@@ -41,18 +33,18 @@ void main() async {
     rethrow;
   }
 
-  debugPrint('☁️ Initializing OneDrive Service...');
+  debugPrint('☁️ Initializing Nextcloud Service...');
   try {
-    await OneDriveService.initialize();
-    debugPrint('✅ OneDrive Service initialized successfully');
-    if (OneDriveService.isAuthenticated) {
-      debugPrint('🔐 OneDrive authentication restored from saved tokens');
+    await NextcloudService.initialize();
+    debugPrint('✅ Nextcloud Service initialized successfully');
+    if (NextcloudService.isAuthenticated) {
+      debugPrint('🔐 Nextcloud authentication restored from saved credentials');
     } else {
-      debugPrint('🔑 No saved OneDrive authentication found');
+      debugPrint('🔑 No saved Nextcloud authentication found');
     }
   } catch (e) {
-    debugPrint('❌ Error initializing OneDrive Service: $e');
-    // Don't rethrow - OneDrive is optional
+    debugPrint('❌ Error initializing Nextcloud Service: $e');
+    // Don't rethrow - Nextcloud is optional
   }
 
   debugPrint('🔐 Requesting storage permissions...');
