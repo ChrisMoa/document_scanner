@@ -21,6 +21,7 @@ jobs:
           SERVER_BASE: ${{ github.server_url }}
           SERVER_URL: ${{ github.server_url }}/${{ github.repository }}
           TOKEN: ${{ secrets.GITEA_TOKEN }}
+          COMMIT_SHA: ${{ github.sha }}
         run: |
           git config --global http."${SERVER_BASE}/".sslVerify false || true
           rm -rf .git
@@ -58,6 +59,7 @@ jobs:
           SERVER_BASE: ${{ github.server_url }}
           SERVER_URL: ${{ github.server_url }}/${{ github.repository }}
           TOKEN: ${{ secrets.GITEA_TOKEN }}
+          COMMIT_SHA: ${{ github.sha }}
         run: |
           apt-get update
           apt-get install -y git ca-certificates
@@ -121,6 +123,7 @@ jobs:
           SERVER_BASE: ${{ github.server_url }}
           SERVER_URL: ${{ github.server_url }}/${{ github.repository }}
           TOKEN: ${{ secrets.GITEA_TOKEN }}
+          COMMIT_SHA: ${{ github.sha }}
         run: |
           git config --global http."${SERVER_BASE}/".sslVerify false || true
           rm -rf .git
@@ -240,6 +243,7 @@ jobs:
           SERVER_BASE: ${{ github.server_url }}
           SERVER_URL: ${{ github.server_url }}/${{ github.repository }}
           TOKEN: ${{ secrets.GITEA_TOKEN }}
+          COMMIT_SHA: ${{ github.sha }}
         run: |
           git config --global http."${SERVER_BASE}/".sslVerify false || true
           rm -rf .git
