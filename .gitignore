@@ -43,6 +43,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+android/**
 
 .flutter-plugins
 .flutter-plugins-dependencies
@@ -65,3 +66,4 @@ macos/Flutter/GeneratedPluginRegistrant.swift
 pubspec.lock
 devtools_options.yaml
 android/app/src/main/res/values/themes.xml
+.env
