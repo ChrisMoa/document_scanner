@@ -1,86 +1,387 @@
-name: Flutter Build
+name: Flutter Multi-Platform Build
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main ]
   pull_request:
-    branches: [ main, master ]
+    branches: [ main ]
   workflow_dispatch:
 
-jobs:
+env:
+  FLUTTER_IMAGE: ghcr.io/cirruslabs/flutter:3.41.2
 
-  build-windows:
-    runs-on: windows-latest
+jobs:
+  test:
+    runs-on: debian-latest
+    container:
+      image: ghcr.io/cirruslabs/flutter:3.41.2
     steps:
-      - uses: actions/checkout@v3
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.29.3'
-          channel: 'stable'
+      - name: Checkout Source
+        env:
+          SERVER_BASE: ${{ github.server_url }}
+          SERVER_URL: ${{ github.server_url }}/${{ github.repository }}
+          TOKEN: ${{ secrets.GITEA_TOKEN }}
+        run: |
+          git config --global http."${SERVER_BASE}/".sslVerify false || true
+          rm -rf .git
+          git init
+
+          REMOTE_URL="${SERVER_URL}.git"
+          if [ -n "$TOKEN" ]; then
+            AUTH_URL=$(echo "$REMOTE_URL" | sed -e "s#^https://#https://oauth2:${TOKEN}@#" -e "s#^http://#http://oauth2:${TOKEN}@#")
+            git remote add origin "$AUTH_URL"
+          else
+            git remote add origin "$REMOTE_URL"
+          fi
+
+          git fetch --depth 1 origin "$COMMIT_SHA"
+          git checkout -q FETCH_HEAD
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos
+
+      - name: Run tests
+        run: flutter test test/core/ test/features/
+
+  version-bump:
+    runs-on: debian-latest
+    needs: [test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[skip ci]')
+    outputs:
+      new_version: ${{ steps.bump.outputs.new_version }}
+    steps:
+      - name: Checkout Source
+        env:
+          SERVER_BASE: ${{ github.server_url }}
+          SERVER_URL: ${{ github.server_url }}/${{ github.repository }}
+          TOKEN: ${{ secrets.GITEA_TOKEN }}
+        run: |
+          apt-get update
+          apt-get install -y git ca-certificates
+          git config --global http."${SERVER_BASE}/".sslVerify false || true
+          rm -rf .git
+          git init
+
+          REMOTE_URL="${SERVER_URL}.git"
+          if [ -n "$TOKEN" ]; then
+            AUTH_URL=$(echo "$REMOTE_URL" | sed -e "s#^https://#https://oauth2:${TOKEN}@#" -e "s#^http://#http://oauth2:${TOKEN}@#")
+            git remote add origin "$AUTH_URL"
+          else
+            git remote add origin "$REMOTE_URL"
+          fi
+
+          git fetch --depth 1 origin "$COMMIT_SHA"
+          git checkout -q FETCH_HEAD
+
+      - name: Bump version
+        id: bump
+        run: |
+          # Get current version from pubspec.yaml
+          CURRENT_VERSION=$(grep -E "^version:" pubspec.yaml | sed 's/version: //')
+          echo "Current version: $CURRENT_VERSION"
+
+          # Parse version components (format: MAJOR.MINOR.PATCH+BUILD)
+          VERSION_PART=$(echo $CURRENT_VERSION | cut -d'+' -f1)
+          MAJOR=$(echo $VERSION_PART | cut -d'.' -f1)
+          MINOR=$(echo $VERSION_PART | cut -d'.' -f2)
+          PATCH=$(echo $VERSION_PART | cut -d'.' -f3)
+
+          # Increment patch version and reset build number
+          NEW_PATCH=$((PATCH + 1))
+          NEW_VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}+1"
+          echo "New version: $NEW_VERSION"
+
+          # Update pubspec.yaml
+          sed -i "s/^version: .*/version: $NEW_VERSION/" pubspec.yaml
+
+          # Output new version for other jobs
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Commit and tag
+        run: |
+          git config user.name "Gitea Actions"
+          git config user.email "actions@gitea.ncluk.de"
+          git add pubspec.yaml
+          git commit -m "Bump version to ${{ steps.bump.outputs.new_version }} [skip ci]"
+          git tag -a "v${{ steps.bump.outputs.new_version }}" -m "Release v${{ steps.bump.outputs.new_version }}"
+          git push origin HEAD:${{ github.ref_name }} --tags
+
+  build-android:
+    runs-on: debian-latest
+    container:
+      image: ghcr.io/cirruslabs/flutter:3.41.2
+    needs: [test, version-bump]
+    if: always() && needs.test.result == 'success' && (needs.version-bump.result == 'success' || needs.version-bump.result == 'skipped')
+    steps:
+      - name: Checkout Source
+        env:
+          SERVER_BASE: ${{ github.server_url }}
+          SERVER_URL: ${{ github.server_url }}/${{ github.repository }}
+          TOKEN: ${{ secrets.GITEA_TOKEN }}
+        run: |
+          git config --global http."${SERVER_BASE}/".sslVerify false || true
+          rm -rf .git
+          git init
+
+          REMOTE_URL="${SERVER_URL}.git"
+          if [ -n "$TOKEN" ]; then
+            AUTH_URL=$(echo "$REMOTE_URL" | sed -e "s#^https://#https://oauth2:${TOKEN}@#" -e "s#^http://#http://oauth2:${TOKEN}@#")
+            git remote add origin "$AUTH_URL"
+          else
+            git remote add origin "$REMOTE_URL"
+          fi
+
+          git fetch --depth 1 origin "$COMMIT_SHA"
+          git checkout -q FETCH_HEAD
+
       - name: Ensure platform directories exist
-        run: flutter create --platforms=windows --org com.example . || true
-      - run: flutter clean || true
-      - run: flutter pub get || true
-      - run: flutter pub outdated || true
-      - run: flutter build windows --release
-      - name: Upload Windows build
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-windows
-          path: build/windows/runner/Release/
+        run: flutter create --platforms=android --org com.documentscanner .
+        continue-on-error: true
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build APK
+        run: |
+          CPU_COUNT=$(nproc)
+          echo "Building with ${CPU_COUNT} parallel workers"
+          export GRADLE_OPTS="-Dorg.gradle.parallel=true -Dorg.gradle.workers.max=${CPU_COUNT} -Dkotlin.compiler.execution.strategy=in-process -Dkotlin.incremental=false -Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx8g"
+          flutter build apk --release
+
+      - name: Build App Bundle
+        run: |
+          CPU_COUNT=$(nproc)
+          echo "Building with ${CPU_COUNT} parallel workers"
+          export GRADLE_OPTS="-Dorg.gradle.parallel=true -Dorg.gradle.workers.max=${CPU_COUNT} -Dkotlin.compiler.execution.strategy=in-process -Dkotlin.incremental=false -Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx8g"
+          flutter build appbundle --release
+
+      - name: Upload to Gitea Release
+        if: github.event_name == 'push'
+        env:
+          TOKEN: ${{ secrets.GITEA_TOKEN }}
+          GITEA_API: ${{ github.server_url }}/api/v1/repos/${{ github.repository }}
+        run: |
+          set -euo pipefail
+          VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | tr '+' '-')
+          TAG="v${VERSION}"
+          CURL_COMMON="--connect-timeout 10 --max-time 300 --retry 3 --retry-delay 2"
+
+          if [ -z "${TOKEN:-}" ]; then
+            echo "GITEA_TOKEN is missing, skipping upload"
+            exit 0
+          fi
+
+          # Get or create release
+          GET_CODE=$(curl -skS $CURL_COMMON -o release-tag.json -w "%{http_code}" \
+            -H "Authorization: token $TOKEN" \
+            "$GITEA_API/releases/tags/$TAG" || true)
+
+          ID=""
+          if [ "$GET_CODE" = "200" ]; then
+            ID=$(jq -r '.id // empty' release-tag.json 2>/dev/null || true)
+          elif [ "$GET_CODE" = "404" ]; then
+            echo "Creating release for tag $TAG"
+            CREATE_CODE=$(curl -skS $CURL_COMMON -o release-create.json -w "%{http_code}" -X POST \
+              -H "Authorization: token $TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{\"tag_name\":\"$TAG\",\"name\":\"Release $TAG\",\"prerelease\":false}" \
+              "$GITEA_API/releases" || true)
+            if [ "$CREATE_CODE" = "201" ] || [ "$CREATE_CODE" = "200" ]; then
+              ID=$(jq -r '.id // empty' release-create.json 2>/dev/null || true)
+            fi
+          fi
+
+          if [ -z "$ID" ]; then
+            echo "Could not get/create release, skipping upload"
+            exit 0
+          fi
+
+          # Upload APK
+          if [ -f "build/app/outputs/flutter-apk/app-release.apk" ]; then
+            echo "Uploading APK..."
+            curl -skS $CURL_COMMON -X POST -H "Authorization: token $TOKEN" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary @"build/app/outputs/flutter-apk/app-release.apk" \
+              "$GITEA_API/releases/$ID/assets?name=document-scanner-${VERSION}.apk" || true
+          fi
+
+          # Upload AAB
+          if [ -f "build/app/outputs/bundle/release/app-release.aab" ]; then
+            echo "Uploading AAB..."
+            curl -skS $CURL_COMMON -X POST -H "Authorization: token $TOKEN" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary @"build/app/outputs/bundle/release/app-release.aab" \
+              "$GITEA_API/releases/$ID/assets?name=document-scanner-${VERSION}.aab" || true
+          fi
+
+          echo "Upload complete"
 
   build-linux:
-    runs-on: ubuntu-latest
+    runs-on: debian-latest
+    container:
+      image: ghcr.io/cirruslabs/flutter:3.41.2
+    needs: [test, version-bump]
+    if: always() && needs.test.result == 'success' && (needs.version-bump.result == 'success' || needs.version-bump.result == 'skipped')
     steps:
-      - uses: actions/checkout@v3
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.29.3'
-          channel: 'stable'
-      - name: Install dependencies
+      - name: Install Linux build dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            clang cmake ninja-build pkg-config llvm binutils \
+            libgtk-3-dev liblzma-dev libstdc++-12-dev lld \
+            libsecret-1-dev libjsoncpp-dev dpkg-dev
+          rm -rf /var/lib/apt/lists/*
+
+      - name: Checkout Source
+        env:
+          SERVER_BASE: ${{ github.server_url }}
+          SERVER_URL: ${{ github.server_url }}/${{ github.repository }}
+          TOKEN: ${{ secrets.GITEA_TOKEN }}
+        run: |
+          git config --global http."${SERVER_BASE}/".sslVerify false || true
+          rm -rf .git
+          git init
+
+          REMOTE_URL="${SERVER_URL}.git"
+          if [ -n "$TOKEN" ]; then
+            AUTH_URL=$(echo "$REMOTE_URL" | sed -e "s#^https://#https://oauth2:${TOKEN}@#" -e "s#^http://#http://oauth2:${TOKEN}@#")
+            git remote add origin "$AUTH_URL"
+          else
+            git remote add origin "$REMOTE_URL"
+          fi
+
+          git fetch --depth 1 origin "$COMMIT_SHA"
+          git checkout -q FETCH_HEAD
+
       - name: Ensure platform directories exist
-        run: flutter create --platforms=linux --org com.example . || true
-      - run: flutter clean || true
-      - run: flutter pub get || true
-      - run: flutter pub outdated || true
-      - run: flutter build linux --release
-      - name: Upload Linux build
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-linux
-          path: build/linux/x64/release/bundle/
-          
-  build-android:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-java@v3
-        with:
-          distribution: 'zulu'
-          java-version: '17'
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.29.3'
-          channel: 'stable'
-      - name: Ensure platform directories exist
-        run: flutter create --platforms=android --org com.example . || true
-      - run: flutter clean || true
-      - run: flutter pub get || true
-      - run: flutter pub outdated || true
-      - name: Build APK
-        run: flutter build apk --release
-      - name: Build App Bundle
-        run: flutter build appbundle --release
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
-      - name: Upload App Bundle
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-aab
-          path: build/app/outputs/bundle/release/app-release.aab
+        run: flutter create --platforms=linux --org com.documentscanner .
+        continue-on-error: true
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build Linux Release
+        run: |
+          CPU_COUNT=$(nproc)
+          echo "Building with ${CPU_COUNT} parallel jobs"
+          export CMAKE_BUILD_PARALLEL_LEVEL=${CPU_COUNT}
+          flutter build linux --release --verbose
+        continue-on-error: false
+
+      - name: Create Debian package
+        run: |
+          # Get version from pubspec.yaml
+          VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | cut -d'+' -f1)
+          BUILD=$(grep '^version:' pubspec.yaml | sed 's/version: //' | cut -d'+' -f2)
+
+          # Create package directory structure
+          PKG_DIR="document-scanner_${VERSION}-${BUILD}_amd64"
+          mkdir -p ${PKG_DIR}/opt/document-scanner
+          mkdir -p ${PKG_DIR}/usr/share/applications
+          mkdir -p ${PKG_DIR}/usr/share/icons/hicolor/256x256/apps
+          mkdir -p ${PKG_DIR}/DEBIAN
+
+          # Copy Flutter bundle
+          cp -r build/linux/x64/release/bundle/* ${PKG_DIR}/opt/document-scanner/
+
+          # Create desktop file
+          cat > ${PKG_DIR}/usr/share/applications/document-scanner.desktop <<EOF
+          [Desktop Entry]
+          Name=Document Scanner
+          Comment=A mobile document scanner app with PDF creation and cloud storage
+          Exec=/opt/document-scanner/document_scanner
+          Icon=document-scanner
+          Terminal=false
+          Type=Application
+          Categories=Office;Utility;Graphics;
+          EOF
+
+          # Copy icon if exists
+          if [ -f "assets/images/app_image.png" ]; then
+            cp assets/images/app_image.png ${PKG_DIR}/usr/share/icons/hicolor/256x256/apps/document-scanner.png
+          fi
+
+          # Create control file
+          cat > ${PKG_DIR}/DEBIAN/control <<EOF
+          Package: document-scanner
+          Version: ${VERSION}-${BUILD}
+          Section: utils
+          Priority: optional
+          Architecture: amd64
+          Maintainer: Chris <noreply@ncluk.de>
+          Description: Document Scanner
+           A mobile document scanner app with PDF creation and cloud storage,
+           built with Flutter. Features document scanning, image processing,
+           PDF generation, and Nextcloud sync.
+          Depends: libgtk-3-0
+          EOF
+
+          # Build the .deb package
+          dpkg-deb --build ${PKG_DIR}
+
+      - name: Upload to Gitea Release
+        if: github.event_name == 'push'
+        env:
+          TOKEN: ${{ secrets.GITEA_TOKEN }}
+          GITEA_API: ${{ github.server_url }}/api/v1/repos/${{ github.repository }}
+        run: |
+          set -euo pipefail
+          VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | tr '+' '-')
+          TAG="v${VERSION}"
+          CURL_COMMON="--connect-timeout 10 --max-time 300 --retry 3 --retry-delay 2"
+
+          if [ -z "${TOKEN:-}" ]; then
+            echo "GITEA_TOKEN is missing, skipping upload"
+            exit 0
+          fi
+
+          # Get or create release
+          GET_CODE=$(curl -skS $CURL_COMMON -o release-tag.json -w "%{http_code}" \
+            -H "Authorization: token $TOKEN" \
+            "$GITEA_API/releases/tags/$TAG" || true)
+
+          ID=""
+          if [ "$GET_CODE" = "200" ]; then
+            ID=$(jq -r '.id // empty' release-tag.json 2>/dev/null || true)
+          elif [ "$GET_CODE" = "404" ]; then
+            echo "Creating release for tag $TAG"
+            CREATE_CODE=$(curl -skS $CURL_COMMON -o release-create.json -w "%{http_code}" -X POST \
+              -H "Authorization: token $TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{\"tag_name\":\"$TAG\",\"name\":\"Release $TAG\",\"prerelease\":false}" \
+              "$GITEA_API/releases" || true)
+            if [ "$CREATE_CODE" = "201" ] || [ "$CREATE_CODE" = "200" ]; then
+              ID=$(jq -r '.id // empty' release-create.json 2>/dev/null || true)
+            fi
+          fi
+
+          if [ -z "$ID" ]; then
+            echo "Could not get/create release, skipping upload"
+            exit 0
+          fi
+
+          # Upload Debian package
+          DEB_FILE=$(ls document-scanner_*.deb 2>/dev/null | head -1)
+          if [ -n "$DEB_FILE" ] && [ -f "$DEB_FILE" ]; then
+            echo "Uploading Debian package..."
+            curl -skS $CURL_COMMON -X POST -H "Authorization: token $TOKEN" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary @"$DEB_FILE" \
+              "$GITEA_API/releases/$ID/assets?name=$(basename "$DEB_FILE")" || true
+          fi
+
+          # Create and upload Linux tarball
+          if [ -d "build/linux/x64/release/bundle" ]; then
+            echo "Creating Linux tarball..."
+            tar -czf "document-scanner-${VERSION}-linux-x64.tar.gz" -C build/linux/x64/release/bundle .
+            echo "Uploading Linux tarball..."
+            curl -skS $CURL_COMMON -X POST -H "Authorization: token $TOKEN" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary @"document-scanner-${VERSION}-linux-x64.tar.gz" \
+              "$GITEA_API/releases/$ID/assets?name=document-scanner-${VERSION}-linux-x64.tar.gz" || true
+          fi
+
+          echo "Upload complete"
