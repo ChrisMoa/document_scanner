@@ -309,14 +309,6 @@ class OpenCVDocumentService {
       // Source corners (document corners in original image)
       final srcCorners = [corners.topLeft, corners.topRight, corners.bottomRight, corners.bottomLeft];
 
-      // Destination corners (rectangular document)
-      final dstCorners = [
-        Offset(0, 0), // top-left
-        Offset(destWidth.toDouble(), 0), // top-right
-        Offset(destWidth.toDouble(), destHeight.toDouble()), // bottom-right
-        Offset(0, destHeight.toDouble()), // bottom-left
-      ];
-
       // For each pixel in destination image, find corresponding source pixel
       for (int y = 0; y < destHeight; y++) {
         for (int x = 0; x < destWidth; x++) {
