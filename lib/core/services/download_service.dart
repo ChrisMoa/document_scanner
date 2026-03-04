@@ -174,11 +174,6 @@ class DownloadService {
         return false;
       }
 
-      if (dataToDownload == null) {
-        debugPrint('$_tag: Failed to get PDF data for ${document.name}');
-        return false;
-      }
-
       // Check if document is encrypted and decrypt if needed
       if (document.isEncrypted && EncryptionService.hasUserKey) {
         debugPrint('$_tag: Decrypting document ${document.name}');
@@ -212,6 +207,7 @@ class DownloadService {
   }
 
   /// Download a cloud document from Nextcloud to the output folder
+  // ignore: unused_element
   static Future<bool> _downloadCloudDocument(CloudDocument cloudDoc, String outputPath) async {
     try {
       debugPrint('$_tag: Downloading cloud document: ${cloudDoc.name} (${cloudDoc.size} bytes)');

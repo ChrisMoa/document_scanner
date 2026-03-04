@@ -22,7 +22,6 @@ class _DocumentCornerAdjusterState extends State<DocumentCornerAdjuster> {
   int? _draggingCornerIndex;
   double _scaleFactor = 1.0;
   Offset _imagePosition = Offset.zero;
-  Size? _containerSize;
 
   @override
   void initState() {
@@ -65,8 +64,6 @@ class _DocumentCornerAdjusterState extends State<DocumentCornerAdjuster> {
 
   void _calculateImageLayout(Size containerSize) {
     if (_image == null) return;
-
-    _containerSize = containerSize;
 
     final imageAspectRatio = widget.imageWidth / widget.imageHeight;
     final containerAspectRatio = containerSize.width / containerSize.height;
