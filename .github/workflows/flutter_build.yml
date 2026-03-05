@@ -167,7 +167,7 @@ jobs:
           TOKEN: ${{ secrets.GITEA_TOKEN }}
           GITEA_API: ${{ github.server_url }}/api/v1/repos/${{ github.repository }}
         run: |
-          set -euo pipefail
+          set -eu
           VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | tr '+' '-')
           TAG="v${VERSION}"
           CURL_COMMON="--connect-timeout 10 --max-time 300 --retry 3 --retry-delay 2"
@@ -332,7 +332,7 @@ jobs:
           TOKEN: ${{ secrets.GITEA_TOKEN }}
           GITEA_API: ${{ github.server_url }}/api/v1/repos/${{ github.repository }}
         run: |
-          set -euo pipefail
+          set -eu
           VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | tr '+' '-')
           TAG="v${VERSION}"
           CURL_COMMON="--connect-timeout 10 --max-time 300 --retry 3 --retry-delay 2"
