@@ -2,7 +2,7 @@
 name: document_scanner
 description: A mobile document scanner app with PDF creation and cloud storage
 
-version: 1.0.0+1
+version: 1.0.1+1
 
 environment:
   sdk: ^3.7.2
