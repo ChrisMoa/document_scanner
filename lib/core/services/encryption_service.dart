@@ -2,8 +2,6 @@ import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
-import 'package:encrypt/encrypt.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:document_scanner/core/services/storage_service.dart';
 import 'package:flutter/material.dart';
 

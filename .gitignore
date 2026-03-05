@@ -40,10 +40,13 @@ app.*.symbols
 app.*.map.json
 
 # Android Studio will place build artifacts here
+# Android build outputs (keep config files committed)
 /android/app/debug
 /android/app/profile
 /android/app/release
-android/**
+/android/.gradle/
+/android/app/build/
+/android/local.properties
 
 .flutter-plugins
 .flutter-plugins-dependencies
@@ -65,5 +68,7 @@ macos/Flutter/GeneratedPluginRegistrant.swift
 *generated*
 pubspec.lock
 devtools_options.yaml
-android/app/src/main/res/values/themes.xml
 .env
+
+# issue files
+*issue_*.md

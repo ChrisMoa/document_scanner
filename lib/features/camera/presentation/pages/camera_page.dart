@@ -500,8 +500,6 @@ class _CameraPageState extends ConsumerState<CameraPage> with WidgetsBindingObse
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     if (!_isInitialized) {
       return Scaffold(
         backgroundColor: Colors.black,

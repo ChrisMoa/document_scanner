@@ -458,4 +458,4 @@ If you encounter issues:
 
 1. Check the debug console for error messages
 2. Verify your Nextcloud credentials
-3. Ensure all dependencies are installed: `flutter pub get`
+3. Ensure all dependencies are installed: `flutter pub get` 
